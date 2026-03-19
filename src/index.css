@@ -878,4 +878,17 @@ textarea {
     font-size: 22px;
     line-height: 1;
   }
+
+  .reader-wrap {
+    background: #09090b;
+    border: 1px solid #27272a;
+    border-radius: 16px;
+    padding: 14px;
+  }
+  
+  #reader {
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+  }
 }

@@ -342,56 +342,58 @@
           isSaving = false;
         }
       }
+      
   async function startScanner() {
-        try {
-            if (scanner) {
-                try { await scanner.stop(); } catch (_) { }
-                try { await scanner.clear(); } catch (_) { }
-            }
+    try {
+      if (scanner) {
+        try {await scanner.stop(); } catch (_) { }
+          try {await scanner.clear(); } catch (_) { }
+      }
 
-            const cameras = await Html5Qrcode.getCameras();
-            if (!cameras || cameras.length === 0) {
-                throw new Error("No se encontraron cámaras.");
-            }
+          const cameras = await Html5Qrcode.getCameras();
+          if (!cameras || cameras.length === 0) {
+        throw new Error("No se encontraron cámaras.");
+      }
 
-            // En notebook normalmente va a ser la webcam.
-            // Si hay más de una, usa la primera por ahora.
-            const cameraId = cameras[0].id;
+          const cameraId = cameras[0].id;
 
-            scanner = new Html5Qrcode(
-                "reader",
-                {
-                    formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
-                }
-            );
-
-            const config = {
-                fps: 12,
-                qrbox: { width: 320, height: 320 },
-                aspectRatio: 1.3333333,
-                rememberLastUsedCamera: true
-            };
-
-            await scanner.start(
-                cameraId,
-                config,
-                (decodedText) => {
-                    console.log("QR detectado:", decodedText);
-                    saveCheckin(decodedText);
-                },
-                (scanError) => {
-                    // No lo mostramos en pantalla porque spamea,
-                    // pero sí queda en consola para debug.
-                    console.log("Scan error:", scanError);
-                }
-            );
-
-            setStatus("Cámara activa. Acercá el QR y mantenelo quieto.", "");
-        } catch (error) {
-            console.error(error);
-            setStatus("No pude iniciar la cámara o leer el QR.", "err");
+          scanner = new Html5Qrcode(
+          "reader",
+          {
+              formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
         }
+          );
+
+          await scanner.start(
+          cameraId,
+          {
+              fps: 8,
+          disableFlip: false,
+          rememberLastUsedCamera: true,
+
+          // Importante: sin qrbox, así escanea TODO el frame
+          // y no solo una región recortada.
+          videoConstraints: {
+              deviceId: {exact: cameraId },
+          width: {ideal: 1280 },
+          height: {ideal: 720 }
+          }
+        },
+        (decodedText) => {
+              console.log("QR detectado:", decodedText);
+          saveCheckin(decodedText);
+        },
+        (scanError) => {
+              console.log("Scan error:", scanError);
+        }
+          );
+
+          setStatus("Cámara activa. Mostrá el QR grande y quieto.", "");
+    } catch (error) {
+              console.error(error);
+          setStatus("No pude iniciar la cámara o leer el QR.", "err");
     }
+  }
       async function stopScanner() {
         try {
           if (scanner) {
