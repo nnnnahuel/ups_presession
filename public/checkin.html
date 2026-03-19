@@ -172,8 +172,46 @@
         color: #a1a1aa;
       }
 
+      .diag {
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid #27272a;
+      }
+
+      .diag-grid {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .diag select {
+        width: 100%;
+        border: 1px solid #3f3f46;
+        background: #09090b;
+        color: #f4f4f5;
+        border-radius: 12px;
+        padding: 14px;
+      }
+
+      .diag-info {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid #27272a;
+        background: #09090b;
+        color: #d4d4d8;
+        font-size: 13px;
+        line-height: 1.5;
+        white-space: pre-line;
+      }
+
       @media (max-width: 640px) {
         .manual-row {
+          grid-template-columns: 1fr;
+        }
+
+        .diag-grid {
           grid-template-columns: 1fr;
         }
 
@@ -205,6 +243,18 @@
 
         <div id="status" class="status">Listo para escanear.</div>
 
+        <div class="diag">
+          <label for="cameraSelect">Diagnostico</label>
+          <div class="diag-grid">
+            <select id="cameraSelect">
+              <option value="">Seleccionar camara</option>
+            </select>
+            <button class="secondary" id="mirrorBtn">Espejo: Auto</button>
+            <button class="secondary" id="scanFrameBtn">Escanear frame</button>
+          </div>
+          <div id="diagInfo" class="diag-info">Esperando camara...</div>
+        </div>
+
         <div class="manual">
           <label for="manualQr">Ingreso manual</label>
           <div class="manual-row">
@@ -227,6 +277,8 @@
       let scanSession = 0;
       let fallbackLoopId = 0;
       let barcodeDetector = null;
+      let selectedCameraId = "";
+      let mirrorMode = "auto";
 
       const statusEl = document.getElementById("status");
       const manualQrEl = document.getElementById("manualQr");
@@ -234,6 +286,10 @@
       const stopBtn = document.getElementById("stopBtn");
       const manualBtn = document.getElementById("manualBtn");
       const readerEl = document.getElementById("reader");
+      const cameraSelectEl = document.getElementById("cameraSelect");
+      const mirrorBtn = document.getElementById("mirrorBtn");
+      const scanFrameBtn = document.getElementById("scanFrameBtn");
+      const diagInfoEl = document.getElementById("diagInfo");
 
       function setStatus(message, type = "") {
         statusEl.className = "status";
@@ -257,6 +313,56 @@
           oscillator.start();
           oscillator.stop(context.currentTime + 0.12);
         } catch (_) {}
+      }
+
+      function setDiagInfo(message) {
+        diagInfoEl.textContent = message;
+      }
+
+      function getMirrorModeLabel() {
+        if (mirrorMode === "on") return "Espejo: Si";
+        if (mirrorMode === "off") return "Espejo: No";
+        return "Espejo: Auto";
+      }
+
+      function applyMirrorToPreview() {
+        const video = getVideoElement();
+        if (!video) return;
+
+        const shouldMirror = mirrorMode !== "off";
+        video.style.transform = shouldMirror ? "scaleX(-1)" : "scaleX(1)";
+        video.style.transformOrigin = "center";
+      }
+
+      function updateDiagnostics(extraMessage = "") {
+        const video = getVideoElement();
+        const hasBarcodeDetector = "BarcodeDetector" in window ? "si" : "no";
+        const constraints = selectedCameraId || "auto";
+        const lines = [
+          "BarcodeDetector: " + hasBarcodeDetector,
+          "Camara elegida: " + constraints,
+          "Modo espejo: " + mirrorMode
+        ];
+
+        if (video) {
+          const track = video.srcObject && video.srcObject.getVideoTracks
+            ? video.srcObject.getVideoTracks()[0]
+            : null;
+          const settings = track && track.getSettings ? track.getSettings() : null;
+
+          lines.push(
+            "Video real: " + (video.videoWidth || 0) + "x" + (video.videoHeight || 0),
+            "Track label: " + (track ? track.label || "sin label" : "sin track"),
+            "Track settings: " + (settings ? JSON.stringify(settings) : "n/d")
+          );
+        } else {
+          lines.push("Video real: sin video");
+        }
+
+        if (extraMessage) lines.push("Ultimo intento: " + extraMessage);
+        setDiagInfo(lines.join("\n"));
+        mirrorBtn.textContent = getMirrorModeLabel();
+        applyMirrorToPreview();
       }
 
       function jsonp(url) {
@@ -313,6 +419,29 @@
         return preferred || cameras[0];
       }
 
+      function fillCameraOptions(cameras) {
+        cameraSelectEl.innerHTML = "";
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Seleccionar camara";
+        cameraSelectEl.appendChild(placeholder);
+
+        cameras.forEach((camera, index) => {
+          const option = document.createElement("option");
+          option.value = camera.id;
+          option.textContent = camera.label || "Camara " + (index + 1);
+          cameraSelectEl.appendChild(option);
+        });
+
+        if (!selectedCameraId) {
+          const preferred = pickCamera(cameras);
+          selectedCameraId = preferred ? preferred.id : "";
+        }
+
+        cameraSelectEl.value = selectedCameraId;
+      }
+
       function buildQrBox(viewfinderWidth, viewfinderHeight) {
         const minSide = Math.min(viewfinderWidth, viewfinderHeight);
         const size = Math.max(220, Math.floor(minSide * 0.72));
@@ -362,6 +491,41 @@
         context.restore();
 
         return tryDetectWithBarcodeDetector(canvas);
+      }
+
+      async function scanCurrentFrame() {
+        const video = getVideoElement();
+        if (!video || video.readyState < 2) {
+          updateDiagnostics("no habia video listo");
+          setStatus("La camara todavia no esta lista.", "warn");
+          return;
+        }
+
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) {
+          updateDiagnostics("canvas no disponible");
+          setStatus("No pude crear el canvas de prueba.", "err");
+          return;
+        }
+
+        const attempts = mirrorMode === "on"
+          ? [true]
+          : mirrorMode === "off"
+            ? [false]
+            : [false, true];
+
+        for (const mirrored of attempts) {
+          const result = await tryDetectFromFrame(video, canvas, context, mirrored);
+          if (result) {
+            updateDiagnostics("detectado en frame " + (mirrored ? "espejado" : "normal"));
+            saveCheckin(result);
+            return;
+          }
+        }
+
+        updateDiagnostics("sin lectura en frame manual");
+        setStatus("No pude leer este frame.", "warn");
       }
 
       function startFallbackLoop(sessionId) {
@@ -422,6 +586,7 @@
             scanner = null;
           }
           setStatus("Camara detenida.", "");
+          updateDiagnostics("camara detenida");
         } catch (_) {
           setStatus("No pude detener la camara.", "err");
         }
@@ -480,10 +645,13 @@
           scanSession = nextSession;
 
           const cameras = await Html5Qrcode.getCameras();
-          const selectedCamera = pickCamera(cameras);
+          fillCameraOptions(cameras);
+          const selectedCamera = cameras.find((camera) => camera.id === selectedCameraId) || pickCamera(cameras);
           if (!selectedCamera) {
             throw new Error("No se encontraron camaras.");
           }
+          selectedCameraId = selectedCamera.id;
+          cameraSelectEl.value = selectedCameraId;
 
           scanner = new Html5Qrcode("reader", {
             formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
@@ -517,9 +685,11 @@
           }
 
           startFallbackLoop(scanSession);
+          updateDiagnostics("scanner iniciado");
           setStatus("Camara activa. Mostra el QR centrado y quieto.", "");
         } catch (error) {
           console.error(error);
+          updateDiagnostics("error al iniciar");
           setStatus("No pude iniciar la camara o leer el QR.", "err");
         }
       }
@@ -537,8 +707,24 @@
         }
       });
 
+      cameraSelectEl.addEventListener("change", () => {
+        selectedCameraId = cameraSelectEl.value;
+        updateDiagnostics("cambio de camara");
+      });
+
+      mirrorBtn.addEventListener("click", () => {
+        mirrorMode = mirrorMode === "auto" ? "off" : mirrorMode === "off" ? "on" : "auto";
+        updateDiagnostics("cambio de espejo");
+      });
+
+      scanFrameBtn.addEventListener("click", () => {
+        scanCurrentFrame();
+      });
+
       (async function pingApi() {
         try {
+          const cameras = await Html5Qrcode.getCameras();
+          fillCameraOptions(cameras);
           const res = await jsonp(APPS_SCRIPT_URL + "?action=ping");
           if (res && res.ok) {
             setStatus("Listo para escanear.", "");
@@ -548,6 +734,7 @@
         } catch (error) {
           setStatus("No pude conectar con Apps Script: " + error.message, "err");
         }
+        updateDiagnostics("pantalla lista");
       })();
     </script>
   </body>
