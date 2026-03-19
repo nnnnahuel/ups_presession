@@ -90,6 +90,43 @@ function formatSavedAt(value: string) {
   });
 }
 
+function sanitizeHistoryData(input: unknown): SavedSession[] {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((entry: Partial<SavedSession>): SavedSession => ({
+      id: entry.id || crypto.randomUUID(),
+      createdAt: entry.createdAt || new Date().toISOString(),
+      sessionTime: entry.sessionTime || "",
+      coachName: entry.coachName || "",
+      movements: Array.isArray(entry.movements)
+        ? entry.movements.filter((item): item is string => typeof item === "string")
+        : [],
+      athletes: Array.isArray(entry.athletes)
+        ? entry.athletes.map(
+            (athlete: Partial<Athlete>): Athlete => ({
+              id: athlete.id || crypto.randomUUID(),
+              name: athlete.name || "",
+              status: athlete.status === "autonomo" ? "autonomo" : "guiado",
+              startExercise: athlete.startExercise || "",
+              isNew: athlete.status === "autonomo" ? false : Boolean(athlete.isNew),
+            })
+          )
+        : [],
+      attentionOrder: Array.isArray(entry.attentionOrder)
+        ? entry.attentionOrder
+            .filter(Boolean)
+            .map((item: Partial<AttentionItem>): AttentionItem => ({
+              athleteId: item.athleteId || crypto.randomUUID(),
+              athleteName: item.athleteName || "",
+              startExercise: item.startExercise || "",
+              step: item.step || "",
+            }))
+        : [],
+    }))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
 function sanitizeLoadedState(raw: string | null): SessionState | null {
   if (!raw) return null;
 
@@ -121,43 +158,35 @@ function sanitizeHistory(raw: string | null): SavedSession[] {
   if (!raw) return [];
 
   try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .map((entry: Partial<SavedSession>): SavedSession => ({
-        id: entry.id || crypto.randomUUID(),
-        createdAt: entry.createdAt || new Date().toISOString(),
-        sessionTime: entry.sessionTime || "",
-        coachName: entry.coachName || "",
-        movements: Array.isArray(entry.movements)
-          ? entry.movements.filter((item): item is string => typeof item === "string")
-          : [],
-        athletes: Array.isArray(entry.athletes)
-          ? entry.athletes.map(
-              (athlete: Partial<Athlete>): Athlete => ({
-                id: athlete.id || crypto.randomUUID(),
-                name: athlete.name || "",
-                status: athlete.status === "autonomo" ? "autonomo" : "guiado",
-                startExercise: athlete.startExercise || "",
-                isNew: athlete.status === "autonomo" ? false : Boolean(athlete.isNew),
-              })
-            )
-          : [],
-        attentionOrder: Array.isArray(entry.attentionOrder)
-          ? entry.attentionOrder
-              .filter(Boolean)
-              .map((item: Partial<AttentionItem>): AttentionItem => ({
-                athleteId: item.athleteId || crypto.randomUUID(),
-                athleteName: item.athleteName || "",
-                startExercise: item.startExercise || "",
-                step: item.step || "",
-              }))
-          : [],
-      }))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return sanitizeHistoryData(JSON.parse(raw));
   } catch {
     return [];
+  }
+}
+
+async function fetchSharedSessions(): Promise<SavedSession[] | null> {
+  try {
+    const response = await fetch("/api/sessions");
+    if (!response.ok) return null;
+    return sanitizeHistoryData(await response.json());
+  } catch {
+    return null;
+  }
+}
+
+async function createSharedSession(session: SavedSession): Promise<boolean> {
+  try {
+    const response = await fetch("/api/sessions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(session),
+    });
+
+    return response.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -197,6 +226,8 @@ export default function App() {
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState("");
+  const [storageMode, setStorageMode] = useState<"shared" | "local">("local");
+  const [isSavingSession, setIsSavingSession] = useState(false);
 
   useEffect(() => {
     const loaded = sanitizeLoadedState(localStorage.getItem(STORAGE_KEY));
@@ -210,6 +241,19 @@ export default function App() {
     setSelectedSessionId(history[0]?.id || null);
 
     setHydrated(true);
+
+    void (async () => {
+      const sharedHistory = await fetchSharedSessions();
+      if (!sharedHistory) return;
+
+      setSavedSessions(sharedHistory);
+      setSelectedSessionId((prev) =>
+        prev && sharedHistory.some((session) => session.id === prev)
+          ? prev
+          : (sharedHistory[0]?.id ?? null)
+      );
+      setStorageMode("shared");
+    })();
   }, []);
 
   useEffect(() => {
@@ -337,16 +381,38 @@ export default function App() {
     };
   }
 
-  function saveAndStartNewSession() {
+  async function saveAndStartNewSession() {
     const snapshot = buildSessionSnapshot();
-    setSavedSessions((prev) => [snapshot, ...prev]);
-    setSelectedSessionId(snapshot.id);
-    setSaveMessage("Sesión guardada. Lista para una nueva.");
+    setIsSavingSession(true);
+
+    const sharedSaved = await createSharedSession(snapshot);
+
+    if (sharedSaved) {
+      const sharedHistory = await fetchSharedSessions();
+
+      if (sharedHistory) {
+        setSavedSessions(sharedHistory);
+        setSelectedSessionId(sharedHistory[0]?.id ?? snapshot.id);
+      } else {
+        setSavedSessions((prev) => [snapshot, ...prev]);
+        setSelectedSessionId(snapshot.id);
+      }
+
+      setStorageMode("shared");
+      setSaveMessage("Sesión guardada y compartida.");
+    } else {
+      setSavedSessions((prev) => [snapshot, ...prev]);
+      setSelectedSessionId(snapshot.id);
+      setStorageMode("local");
+      setSaveMessage("Sesión guardada solo localmente.");
+    }
+
     setViewMode("board");
     localStorage.removeItem(STORAGE_KEY);
     setState(createEmptyState());
     setCollapsedAthletes({});
     setStep(1);
+    setIsSavingSession(false);
   }
 
   const canGoToAthletes = movementList.length > 0;
@@ -387,10 +453,17 @@ export default function App() {
                 {viewMode === "board" ? (
                   <button
                     type="button"
-                    className={`${step === 3 && canSaveSession ? "primary-btn" : "secondary-btn"} small-btn`}
+                    className={`${
+                      step === 3 && canSaveSession ? "primary-btn" : "secondary-btn"
+                    } small-btn`}
                     onClick={step === 3 && canSaveSession ? saveAndStartNewSession : resetAll}
+                    disabled={isSavingSession}
                   >
-                    {step === 3 && canSaveSession ? "Guardar y nueva sesión" : "Nueva sesión"}
+                    {step === 3 && canSaveSession
+                      ? isSavingSession
+                        ? "Guardando..."
+                        : "Guardar y nueva sesión"
+                      : "Nueva sesión"}
                   </button>
                 ) : null}
               </div>
@@ -417,6 +490,9 @@ export default function App() {
                   <div className="small-label">
                     {savedSessions.length} sesión{savedSessions.length === 1 ? "" : "es"} guardada
                     {savedSessions.length === 1 ? "" : "s"}
+                  </div>
+                  <div className="small-label">
+                    {storageMode === "shared" ? "Persistencia compartida" : "Persistencia local"}
                   </div>
                 </div>
               </div>
@@ -944,10 +1020,10 @@ export default function App() {
                     type="button"
                     className="primary-btn"
                     onClick={saveAndStartNewSession}
-                    disabled={!canSaveSession}
-                    style={{ opacity: canSaveSession ? 1 : 0.5 }}
+                    disabled={!canSaveSession || isSavingSession}
+                    style={{ opacity: canSaveSession && !isSavingSession ? 1 : 0.5 }}
                   >
-                    Guardar y nueva sesión
+                    {isSavingSession ? "Guardando..." : "Guardar y nueva sesión"}
                   </button>
                 </div>
               </section>
