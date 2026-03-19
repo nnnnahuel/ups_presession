@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>UP.S Check-in</title>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <style>
       :root {
         color-scheme: dark;
@@ -65,7 +65,8 @@
       }
 
       button,
-      input {
+      input,
+      select {
         font: inherit;
       }
 
@@ -96,6 +97,7 @@
       }
 
       .reader-wrap {
+        position: relative;
         background: #09090b;
         border: 1px solid #27272a;
         border-radius: 16px;
@@ -103,7 +105,35 @@
       }
 
       #reader {
+        position: relative;
+        overflow: hidden;
+        border-radius: 12px;
+        background: #000;
+        aspect-ratio: 16 / 9;
+      }
+
+      #readerVideo {
         width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        background: #000;
+      }
+
+      .overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        display: grid;
+        place-items: center;
+      }
+
+      .overlay-box {
+        width: min(58vw, 290px);
+        aspect-ratio: 1;
+        border: 4px solid rgba(255, 255, 255, 0.88);
+        border-radius: 16px;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.12);
       }
 
       .status {
@@ -138,40 +168,6 @@
         color: #fecaca;
       }
 
-      .manual {
-        margin-top: 20px;
-        padding-top: 20px;
-        border-top: 1px solid #27272a;
-      }
-
-      .manual label {
-        display: block;
-        margin-bottom: 8px;
-        font-size: 14px;
-        color: #d4d4d8;
-      }
-
-      .manual-row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 10px;
-      }
-
-      .manual input {
-        width: 100%;
-        border: 1px solid #3f3f46;
-        background: #09090b;
-        color: #f4f4f5;
-        border-radius: 12px;
-        padding: 14px;
-      }
-
-      .tiny {
-        margin-top: 8px;
-        font-size: 12px;
-        color: #a1a1aa;
-      }
-
       .diag {
         margin-top: 18px;
         padding-top: 18px;
@@ -185,7 +181,8 @@
         align-items: end;
       }
 
-      .diag select {
+      .diag select,
+      .manual input {
         width: 100%;
         border: 1px solid #3f3f46;
         background: #09090b;
@@ -204,13 +201,37 @@
         font-size: 13px;
         line-height: 1.5;
         white-space: pre-line;
+        word-break: break-word;
+      }
+
+      .manual {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #27272a;
+      }
+
+      .manual label,
+      .diag label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 14px;
+        color: #d4d4d8;
+      }
+
+      .manual-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+      }
+
+      .tiny {
+        margin-top: 8px;
+        font-size: 12px;
+        color: #a1a1aa;
       }
 
       @media (max-width: 640px) {
-        .manual-row {
-          grid-template-columns: 1fr;
-        }
-
+        .manual-row,
         .diag-grid {
           grid-template-columns: 1fr;
         }
@@ -221,6 +242,10 @@
 
         .status {
           font-size: 16px;
+        }
+
+        .overlay-box {
+          width: min(68vw, 250px);
         }
       }
     </style>
@@ -238,7 +263,12 @@
         </div>
 
         <div class="reader-wrap">
-          <div id="reader"></div>
+          <div id="reader">
+            <video id="readerVideo" autoplay muted playsinline></video>
+            <div class="overlay">
+              <div class="overlay-box"></div>
+            </div>
+          </div>
         </div>
 
         <div id="status" class="status">Listo para escanear.</div>
@@ -269,23 +299,22 @@
     <script>
       const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbytLPt2OIOJwhtbNISzjnxzcbtLfSMfR7PgLg7HgZEarzFOriYNyCLKUuk2QHESQ-uxJQ/exec";
 
-      let scanner = null;
+      let stream = null;
       let isSaving = false;
       let cooldownUntil = 0;
       let lastText = "";
       let activeJsonpScript = null;
-      let scanSession = 0;
-      let fallbackLoopId = 0;
-      let barcodeDetector = null;
+      let scanLoopId = 0;
       let selectedCameraId = "";
       let mirrorMode = "auto";
+      let lastScanDetail = "sin intentos";
 
       const statusEl = document.getElementById("status");
       const manualQrEl = document.getElementById("manualQr");
       const startBtn = document.getElementById("startBtn");
       const stopBtn = document.getElementById("stopBtn");
       const manualBtn = document.getElementById("manualBtn");
-      const readerEl = document.getElementById("reader");
+      const videoEl = document.getElementById("readerVideo");
       const cameraSelectEl = document.getElementById("cameraSelect");
       const mirrorBtn = document.getElementById("mirrorBtn");
       const scanFrameBtn = document.getElementById("scanFrameBtn");
@@ -295,6 +324,10 @@
         statusEl.className = "status";
         if (type) statusEl.classList.add(type);
         statusEl.textContent = message;
+      }
+
+      function setDiagInfo(message) {
+        diagInfoEl.textContent = message;
       }
 
       function beepSuccess() {
@@ -315,43 +348,35 @@
         } catch (_) {}
       }
 
-      function setDiagInfo(message) {
-        diagInfoEl.textContent = message;
-      }
-
       function getMirrorModeLabel() {
         if (mirrorMode === "on") return "Espejo: Si";
         if (mirrorMode === "off") return "Espejo: No";
         return "Espejo: Auto";
       }
 
-      function applyMirrorToPreview() {
-        const video = getVideoElement();
-        if (!video) return;
+      function shouldMirrorPreview() {
+        return mirrorMode !== "off";
+      }
 
-        const shouldMirror = mirrorMode !== "off";
-        video.style.transform = shouldMirror ? "scaleX(-1)" : "scaleX(1)";
-        video.style.transformOrigin = "center";
+      function applyMirrorToPreview() {
+        videoEl.style.transform = shouldMirrorPreview() ? "scaleX(-1)" : "scaleX(1)";
+        videoEl.style.transformOrigin = "center";
       }
 
       function updateDiagnostics(extraMessage = "") {
-        const video = getVideoElement();
-        const hasBarcodeDetector = "BarcodeDetector" in window ? "si" : "no";
-        const constraints = selectedCameraId || "auto";
         const lines = [
-          "BarcodeDetector: " + hasBarcodeDetector,
-          "Camara elegida: " + constraints,
-          "Modo espejo: " + mirrorMode
+          "Lector: jsQR",
+          "Camara elegida: " + (selectedCameraId || "auto"),
+          "Modo espejo: " + mirrorMode,
+          "jsQR cargado: " + (typeof window.jsQR === "function" ? "si" : "no")
         ];
 
-        if (video) {
-          const track = video.srcObject && video.srcObject.getVideoTracks
-            ? video.srcObject.getVideoTracks()[0]
-            : null;
+        if (stream) {
+          const track = stream.getVideoTracks()[0];
           const settings = track && track.getSettings ? track.getSettings() : null;
 
           lines.push(
-            "Video real: " + (video.videoWidth || 0) + "x" + (video.videoHeight || 0),
+            "Video real: " + (videoEl.videoWidth || 0) + "x" + (videoEl.videoHeight || 0),
             "Track label: " + (track ? track.label || "sin label" : "sin track"),
             "Track settings: " + (settings ? JSON.stringify(settings) : "n/d")
           );
@@ -359,7 +384,7 @@
           lines.push("Video real: sin video");
         }
 
-        if (extraMessage) lines.push("Ultimo intento: " + extraMessage);
+        lines.push("Ultimo intento: " + (extraMessage || lastScanDetail));
         setDiagInfo(lines.join("\n"));
         mirrorBtn.textContent = getMirrorModeLabel();
         applyMirrorToPreview();
@@ -408,6 +433,11 @@
         });
       }
 
+      async function listCameras() {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices.filter((device) => device.kind === "videoinput");
+      }
+
       function pickCamera(cameras) {
         if (!Array.isArray(cameras) || cameras.length === 0) return null;
 
@@ -429,167 +459,77 @@
 
         cameras.forEach((camera, index) => {
           const option = document.createElement("option");
-          option.value = camera.id;
+          option.value = camera.deviceId;
           option.textContent = camera.label || "Camara " + (index + 1);
           cameraSelectEl.appendChild(option);
         });
 
         if (!selectedCameraId) {
           const preferred = pickCamera(cameras);
-          selectedCameraId = preferred ? preferred.id : "";
+          selectedCameraId = preferred ? preferred.deviceId : "";
         }
 
         cameraSelectEl.value = selectedCameraId;
       }
 
-      function buildQrBox(viewfinderWidth, viewfinderHeight) {
-        const minSide = Math.min(viewfinderWidth, viewfinderHeight);
-        const size = Math.max(220, Math.floor(minSide * 0.72));
-        return { width: size, height: size };
-      }
-
-      function getVideoElement() {
-        return readerEl.querySelector("video");
-      }
-
-      async function tryDetectWithBarcodeDetector(source) {
-        if (!("BarcodeDetector" in window)) return null;
-
-        if (!barcodeDetector) {
-          try {
-            barcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
-          } catch (_) {
-            barcodeDetector = null;
-            return null;
-          }
+      async function stopScanner() {
+        if (scanLoopId) {
+          window.cancelAnimationFrame(scanLoopId);
+          scanLoopId = 0;
         }
 
-        const results = await barcodeDetector.detect(source);
-        if (!results || results.length === 0) return null;
-
-        const hit = results.find((item) => item.rawValue);
-        return hit ? hit.rawValue : null;
-      }
-
-      async function tryDetectFromFrame(video, canvas, context, mirrored) {
-        const width = video.videoWidth;
-        const height = video.videoHeight;
-        if (!width || !height) return null;
-
-        canvas.width = width;
-        canvas.height = height;
-
-        context.save();
-        context.clearRect(0, 0, width, height);
-
-        if (mirrored) {
-          context.translate(width, 0);
-          context.scale(-1, 1);
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+          stream = null;
         }
 
-        context.drawImage(video, 0, 0, width, height);
-        context.restore();
-
-        return tryDetectWithBarcodeDetector(canvas);
+        videoEl.srcObject = null;
+        lastScanDetail = "camara detenida";
+        setStatus("Camara detenida.", "");
+        updateDiagnostics();
       }
 
-      async function scanCurrentFrame() {
-        const video = getVideoElement();
-        if (!video || video.readyState < 2) {
-          updateDiagnostics("no habia video listo");
-          setStatus("La camara todavia no esta lista.", "warn");
-          return;
+      function decodeFrame(mirrored) {
+        if (typeof window.jsQR !== "function") {
+          lastScanDetail = "jsQR no cargado";
+          return null;
+        }
+
+        const width = videoEl.videoWidth;
+        const height = videoEl.videoHeight;
+        if (!width || !height) {
+          lastScanDetail = "video sin dimensiones";
+          return null;
         }
 
         const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) {
-          updateDiagnostics("canvas no disponible");
-          setStatus("No pude crear el canvas de prueba.", "err");
-          return;
+          lastScanDetail = "canvas no disponible";
+          return null;
         }
 
-        const attempts = mirrorMode === "on"
-          ? [true]
-          : mirrorMode === "off"
-            ? [false]
-            : [false, true];
+        canvas.width = width;
+        canvas.height = height;
 
-        for (const mirrored of attempts) {
-          const result = await tryDetectFromFrame(video, canvas, context, mirrored);
-          if (result) {
-            updateDiagnostics("detectado en frame " + (mirrored ? "espejado" : "normal"));
-            saveCheckin(result);
-            return;
-          }
+        context.save();
+        if (mirrored) {
+          context.translate(width, 0);
+          context.scale(-1, 1);
         }
+        context.drawImage(videoEl, 0, 0, width, height);
+        context.restore();
 
-        updateDiagnostics("sin lectura en frame manual");
-        setStatus("No pude leer este frame.", "warn");
-      }
+        const imageData = context.getImageData(0, 0, width, height);
+        const result = window.jsQR(imageData.data, width, height, {
+          inversionAttempts: "attemptBoth"
+        });
 
-      function startFallbackLoop(sessionId) {
-        if (!("BarcodeDetector" in window)) return;
+        lastScanDetail = result
+          ? "detectado en frame " + (mirrored ? "espejado" : "normal")
+          : "sin lectura en frame " + (mirrored ? "espejado" : "normal");
 
-        const canvas = document.createElement("canvas");
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-        if (!context) return;
-
-        let lastAttemptAt = 0;
-
-        const tick = async () => {
-          if (scanSession !== sessionId) return;
-
-          const video = getVideoElement();
-          const now = performance.now();
-
-          if (!video || video.readyState < 2 || now - lastAttemptAt < 180) {
-            fallbackLoopId = window.requestAnimationFrame(tick);
-            return;
-          }
-
-          lastAttemptAt = now;
-
-          try {
-            const directHit = await tryDetectFromFrame(video, canvas, context, false);
-            if (directHit) {
-              saveCheckin(directHit);
-              fallbackLoopId = window.requestAnimationFrame(tick);
-              return;
-            }
-
-            const mirroredHit = await tryDetectFromFrame(video, canvas, context, true);
-            if (mirroredHit) {
-              saveCheckin(mirroredHit);
-            }
-          } catch (_) {
-            // Ignoro errores de un frame aislado para no cortar el escaneo.
-          }
-
-          fallbackLoopId = window.requestAnimationFrame(tick);
-        };
-
-        fallbackLoopId = window.requestAnimationFrame(tick);
-      }
-
-      async function stopScanner() {
-        scanSession += 1;
-        if (fallbackLoopId) {
-          window.cancelAnimationFrame(fallbackLoopId);
-          fallbackLoopId = 0;
-        }
-
-        try {
-          if (scanner) {
-            await scanner.stop();
-            await scanner.clear();
-            scanner = null;
-          }
-          setStatus("Camara detenida.", "");
-          updateDiagnostics("camara detenida");
-        } catch (_) {
-          setStatus("No pude detener la camara.", "err");
-        }
+        return result ? result.data : null;
       }
 
       async function saveCheckin(qrText) {
@@ -612,11 +552,7 @@
         setStatus("Registrando...", "");
 
         try {
-          const url =
-            APPS_SCRIPT_URL +
-            "?action=register&qrText=" +
-            encodeURIComponent(cleaned);
-
+          const url = APPS_SCRIPT_URL + "?action=register&qrText=" + encodeURIComponent(cleaned);
           const res = await jsonp(url);
 
           if (!res.ok && !res.found) {
@@ -637,59 +573,101 @@
         }
       }
 
-      async function startScanner() {
-        const nextSession = scanSession + 1;
+      async function scanCurrentFrame() {
+        if (!stream || videoEl.readyState < 2) {
+          lastScanDetail = "no habia video listo";
+          updateDiagnostics();
+          setStatus("La camara todavia no esta lista.", "warn");
+          return;
+        }
 
+        const attempts = mirrorMode === "on"
+          ? [true]
+          : mirrorMode === "off"
+            ? [false]
+            : [false, true];
+
+        for (const mirrored of attempts) {
+          const result = decodeFrame(mirrored);
+          if (result) {
+            updateDiagnostics();
+            saveCheckin(result);
+            return;
+          }
+        }
+
+        updateDiagnostics();
+        setStatus("No pude leer este frame.", "warn");
+      }
+
+      function startScanLoop() {
+        const tick = async () => {
+          if (!stream) return;
+
+          if (videoEl.readyState >= 2 && !isSaving) {
+            const attempts = mirrorMode === "on"
+              ? [true]
+              : mirrorMode === "off"
+                ? [false]
+                : [false, true];
+
+            for (const mirrored of attempts) {
+              const result = decodeFrame(mirrored);
+              if (result) {
+                updateDiagnostics();
+                saveCheckin(result);
+                break;
+              }
+            }
+          }
+
+          scanLoopId = window.requestAnimationFrame(tick);
+        };
+
+        scanLoopId = window.requestAnimationFrame(tick);
+      }
+
+      async function startScanner() {
         try {
           await stopScanner();
-          scanSession = nextSession;
 
-          const cameras = await Html5Qrcode.getCameras();
+          const constraints = {
+            audio: false,
+            video: selectedCameraId
+              ? {
+                  deviceId: { exact: selectedCameraId },
+                  width: { ideal: 1920 },
+                  height: { ideal: 1080 }
+                }
+              : {
+                  facingMode: "environment",
+                  width: { ideal: 1920 },
+                  height: { ideal: 1080 }
+                }
+          };
+
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          videoEl.srcObject = stream;
+          await videoEl.play();
+
+          const cameras = await listCameras();
           fillCameraOptions(cameras);
-          const selectedCamera = cameras.find((camera) => camera.id === selectedCameraId) || pickCamera(cameras);
-          if (!selectedCamera) {
-            throw new Error("No se encontraron camaras.");
-          }
-          selectedCameraId = selectedCamera.id;
-          cameraSelectEl.value = selectedCameraId;
 
-          scanner = new Html5Qrcode("reader", {
-            formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-            verbose: false
-          });
-
-          await scanner.start(
-            { deviceId: { exact: selectedCamera.id } },
-            {
-              fps: 10,
-              qrbox: buildQrBox,
-              aspectRatio: 1.7778,
-              disableFlip: false,
-              rememberLastUsedCamera: true,
-              videoConstraints: {
-                deviceId: { exact: selectedCamera.id },
-                width: { ideal: 1920 },
-                height: { ideal: 1080 }
-              }
-            },
-            (decodedText) => {
-              saveCheckin(decodedText);
-            },
-            () => {}
-          );
-
-          const video = getVideoElement();
-          if (video) {
-            video.setAttribute("playsinline", "true");
-            video.muted = true;
+          const track = stream.getVideoTracks()[0];
+          if (!selectedCameraId && track) {
+            const settings = track.getSettings ? track.getSettings() : null;
+            selectedCameraId = settings && settings.deviceId ? settings.deviceId : "";
           }
 
-          startFallbackLoop(scanSession);
-          updateDiagnostics("scanner iniciado");
+          lastScanDetail = "scanner iniciado";
+          applyMirrorToPreview();
+          updateDiagnostics();
+          startScanLoop();
           setStatus("Camara activa. Mostra el QR centrado y quieto.", "");
         } catch (error) {
           console.error(error);
-          updateDiagnostics("error al iniciar");
+          lastScanDetail = "error al iniciar";
+          updateDiagnostics();
           setStatus("No pude iniciar la camara o leer el QR.", "err");
         }
       }
@@ -709,22 +687,25 @@
 
       cameraSelectEl.addEventListener("change", () => {
         selectedCameraId = cameraSelectEl.value;
-        updateDiagnostics("cambio de camara");
+        lastScanDetail = "cambio de camara";
+        updateDiagnostics();
       });
 
       mirrorBtn.addEventListener("click", () => {
         mirrorMode = mirrorMode === "auto" ? "off" : mirrorMode === "off" ? "on" : "auto";
-        updateDiagnostics("cambio de espejo");
+        lastScanDetail = "cambio de espejo";
+        updateDiagnostics();
       });
 
       scanFrameBtn.addEventListener("click", () => {
         scanCurrentFrame();
       });
 
-      (async function pingApi() {
+      (async function init() {
         try {
-          const cameras = await Html5Qrcode.getCameras();
+          const cameras = await listCameras();
           fillCameraOptions(cameras);
+
           const res = await jsonp(APPS_SCRIPT_URL + "?action=ping");
           if (res && res.ok) {
             setStatus("Listo para escanear.", "");
@@ -734,6 +715,7 @@
         } catch (error) {
           setStatus("No pude conectar con Apps Script: " + error.message, "err");
         }
+
         updateDiagnostics("pantalla lista");
       })();
     </script>
