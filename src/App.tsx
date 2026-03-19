@@ -639,7 +639,7 @@ export default function App() {
                   setState((prev) => ({ ...prev, movementsText: e.target.value }))
                 }
                 placeholder={
-                  "Elevaciones laterales\nPeso Muerto Rumano\nFlexiones de brazos\nSentadillas búlgaras"
+                  "Elevaciones laterales\nPeso Muerto Rumano\nFlexiones de brazos\nSentadillas búlgaras\nExtra"
                 }
               />
             </div>
