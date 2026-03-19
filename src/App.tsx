@@ -44,14 +44,6 @@ const TURN_TIMES = Array.from({ length: 16 }, (_, index) => {
   return `${String(hour).padStart(2, "0")}:00`;
 });
 
-const DEFAULT_MOVEMENTS_TEXT = [
-  "Elevaciones laterales",
-  "Peso Muerto Rumano",
-  "Flexiones de brazos",
-  "Sentadillas búlgaras",
-  "Extra",
-].join("\n");
-
 function createEmptyState(): SessionState {
   return {
     sessionTime: "",
