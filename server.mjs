@@ -105,9 +105,23 @@ app.post("/api/sessions", async (req, res) => {
   }
 });
 
-app.use(express.static(distDir));
+app.use(
+  express.static(distDir, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-store, must-revalidate");
+        return;
+      }
+
+      if (/\.(js|css|png|jpg|jpeg|svg|webp|ico)$/i.test(filePath)) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    },
+  })
+);
 
 app.get(/.*/, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
   res.sendFile(path.join(distDir, "index.html"));
 });
 

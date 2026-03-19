@@ -49,13 +49,14 @@ const DEFAULT_MOVEMENTS_TEXT = [
   "Peso Muerto Rumano",
   "Flexiones de brazos",
   "Sentadillas búlgaras",
+  "Extra",
 ].join("\n");
 
 function createEmptyState(): SessionState {
   return {
     sessionTime: "",
     coachName: "",
-    movementsText: DEFAULT_MOVEMENTS_TEXT,
+    movementsText: "",
     athletes: [],
   };
 }
@@ -450,7 +451,7 @@ export default function App() {
                     </button>
                   </>
                 ) : null}
-                {viewMode === "board" ? (
+                {viewMode === "board" && step !== 1 ? (
                   <button
                     type="button"
                     className={`${
@@ -473,7 +474,7 @@ export default function App() {
           </div>
         </div>
 
-        {viewMode === "board" && step !== 3 ? (
+        {viewMode === "board" && step !== 1 && step !== 3 ? (
           <div className="mini-stats" style={{ marginBottom: 20 }}>
             <span>{namedAthletesCount} atletas</span>
             <span>{movementList.length} movimientos</span>
