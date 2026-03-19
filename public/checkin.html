@@ -35,12 +35,12 @@
         border: 1px solid #27272a;
         border-radius: 20px;
         padding: 24px;
-        box-shadow: 0 10px 30px rgba(0,0,0,.25);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
       }
 
       .eyebrow {
         font-size: 12px;
-        letter-spacing: .18em;
+        letter-spacing: 0.18em;
         text-transform: uppercase;
         color: #a1a1aa;
         margin-bottom: 8px;
@@ -74,7 +74,7 @@
         border-radius: 12px;
         padding: 14px 18px;
         cursor: pointer;
-        transition: .18s ease;
+        transition: 0.18s ease;
       }
 
       .primary {
@@ -192,11 +192,11 @@
       <div class="card">
         <div class="eyebrow">UP.S</div>
         <h1>Check-in</h1>
-        <div class="muted">Escaneá tu QR al entrar.</div>
+        <div class="muted">Escanea tu QR al entrar.</div>
 
         <div class="actions">
-          <button class="primary" id="startBtn">Iniciar cámara</button>
-          <button class="secondary" id="stopBtn">Detener cámara</button>
+          <button class="primary" id="startBtn">Iniciar camara</button>
+          <button class="secondary" id="stopBtn">Detener camara</button>
         </div>
 
         <div class="reader-wrap">
@@ -208,10 +208,10 @@
         <div class="manual">
           <label for="manualQr">Ingreso manual</label>
           <div class="manual-row">
-            <input id="manualQr" placeholder="Pegar código manual" />
+            <input id="manualQr" placeholder="Pegar codigo manual" />
             <button class="secondary" id="manualBtn">Registrar</button>
           </div>
-          <div class="tiny">Útil si la cámara falla o para hacer pruebas rápidas.</div>
+          <div class="tiny">Util si la camara falla o para hacer pruebas rapidas.</div>
         </div>
       </div>
     </div>
@@ -224,12 +224,16 @@
       let cooldownUntil = 0;
       let lastText = "";
       let activeJsonpScript = null;
+      let scanSession = 0;
+      let fallbackLoopId = 0;
+      let barcodeDetector = null;
 
       const statusEl = document.getElementById("status");
       const manualQrEl = document.getElementById("manualQr");
       const startBtn = document.getElementById("startBtn");
       const stopBtn = document.getElementById("stopBtn");
       const manualBtn = document.getElementById("manualBtn");
+      const readerEl = document.getElementById("reader");
 
       function setStatus(message, type = "") {
         statusEl.className = "status";
@@ -292,17 +296,142 @@
           setTimeout(() => {
             if (window[callbackName]) {
               cleanup();
-              reject(new Error("La API tardó demasiado en responder."));
+              reject(new Error("La API tardo demasiado en responder."));
             }
           }, 10000);
         });
+      }
+
+      function pickCamera(cameras) {
+        if (!Array.isArray(cameras) || cameras.length === 0) return null;
+
+        const preferred = cameras.find((camera) => {
+          const label = String(camera.label || "");
+          return /rear|back|environment|world|extern|usb/i.test(label);
+        });
+
+        return preferred || cameras[0];
+      }
+
+      function buildQrBox(viewfinderWidth, viewfinderHeight) {
+        const minSide = Math.min(viewfinderWidth, viewfinderHeight);
+        const size = Math.max(220, Math.floor(minSide * 0.72));
+        return { width: size, height: size };
+      }
+
+      function getVideoElement() {
+        return readerEl.querySelector("video");
+      }
+
+      async function tryDetectWithBarcodeDetector(source) {
+        if (!("BarcodeDetector" in window)) return null;
+
+        if (!barcodeDetector) {
+          try {
+            barcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+          } catch (_) {
+            barcodeDetector = null;
+            return null;
+          }
+        }
+
+        const results = await barcodeDetector.detect(source);
+        if (!results || results.length === 0) return null;
+
+        const hit = results.find((item) => item.rawValue);
+        return hit ? hit.rawValue : null;
+      }
+
+      async function tryDetectFromFrame(video, canvas, context, mirrored) {
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        if (!width || !height) return null;
+
+        canvas.width = width;
+        canvas.height = height;
+
+        context.save();
+        context.clearRect(0, 0, width, height);
+
+        if (mirrored) {
+          context.translate(width, 0);
+          context.scale(-1, 1);
+        }
+
+        context.drawImage(video, 0, 0, width, height);
+        context.restore();
+
+        return tryDetectWithBarcodeDetector(canvas);
+      }
+
+      function startFallbackLoop(sessionId) {
+        if (!("BarcodeDetector" in window)) return;
+
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) return;
+
+        let lastAttemptAt = 0;
+
+        const tick = async () => {
+          if (scanSession !== sessionId) return;
+
+          const video = getVideoElement();
+          const now = performance.now();
+
+          if (!video || video.readyState < 2 || now - lastAttemptAt < 180) {
+            fallbackLoopId = window.requestAnimationFrame(tick);
+            return;
+          }
+
+          lastAttemptAt = now;
+
+          try {
+            const directHit = await tryDetectFromFrame(video, canvas, context, false);
+            if (directHit) {
+              saveCheckin(directHit);
+              fallbackLoopId = window.requestAnimationFrame(tick);
+              return;
+            }
+
+            const mirroredHit = await tryDetectFromFrame(video, canvas, context, true);
+            if (mirroredHit) {
+              saveCheckin(mirroredHit);
+            }
+          } catch (_) {
+            // Ignoro errores de un frame aislado para no cortar el escaneo.
+          }
+
+          fallbackLoopId = window.requestAnimationFrame(tick);
+        };
+
+        fallbackLoopId = window.requestAnimationFrame(tick);
+      }
+
+      async function stopScanner() {
+        scanSession += 1;
+        if (fallbackLoopId) {
+          window.cancelAnimationFrame(fallbackLoopId);
+          fallbackLoopId = 0;
+        }
+
+        try {
+          if (scanner) {
+            await scanner.stop();
+            await scanner.clear();
+            scanner = null;
+          }
+          setStatus("Camara detenida.", "");
+        } catch (_) {
+          setStatus("No pude detener la camara.", "err");
+        }
       }
 
       async function saveCheckin(qrText) {
         const cleaned = String(qrText || "").trim();
 
         if (!cleaned) {
-          setStatus("Código vacío.", "warn");
+          setStatus("Codigo vacio.", "warn");
           return;
         }
 
@@ -342,68 +471,56 @@
           isSaving = false;
         }
       }
-      
-  async function startScanner() {
-    try {
-      if (scanner) {
-        try {await scanner.stop(); } catch (_) { }
-          try {await scanner.clear(); } catch (_) { }
-      }
+
+      async function startScanner() {
+        const nextSession = scanSession + 1;
+
+        try {
+          await stopScanner();
+          scanSession = nextSession;
 
           const cameras = await Html5Qrcode.getCameras();
-          if (!cameras || cameras.length === 0) {
-        throw new Error("No se encontraron cámaras.");
-      }
+          const selectedCamera = pickCamera(cameras);
+          if (!selectedCamera) {
+            throw new Error("No se encontraron camaras.");
+          }
 
-          const cameraId = cameras[0].id;
-
-          scanner = new Html5Qrcode(
-          "reader",
-          {
-              formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
-        }
-          );
+          scanner = new Html5Qrcode("reader", {
+            formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+            verbose: false
+          });
 
           await scanner.start(
-          cameraId,
-          {
-              fps: 8,
-          disableFlip: false,
-          rememberLastUsedCamera: true,
-
-          // Importante: sin qrbox, así escanea TODO el frame
-          // y no solo una región recortada.
-          videoConstraints: {
-              deviceId: {exact: cameraId },
-          width: {ideal: 1280 },
-          height: {ideal: 720 }
-          }
-        },
-        (decodedText) => {
-              console.log("QR detectado:", decodedText);
-          saveCheckin(decodedText);
-        },
-        (scanError) => {
-              console.log("Scan error:", scanError);
-        }
+            { deviceId: { exact: selectedCamera.id } },
+            {
+              fps: 10,
+              qrbox: buildQrBox,
+              aspectRatio: 1.7778,
+              disableFlip: false,
+              rememberLastUsedCamera: true,
+              videoConstraints: {
+                deviceId: { exact: selectedCamera.id },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+              }
+            },
+            (decodedText) => {
+              saveCheckin(decodedText);
+            },
+            () => {}
           );
 
-          setStatus("Cámara activa. Mostrá el QR grande y quieto.", "");
-    } catch (error) {
-              console.error(error);
-          setStatus("No pude iniciar la cámara o leer el QR.", "err");
-    }
-  }
-      async function stopScanner() {
-        try {
-          if (scanner) {
-            await scanner.stop();
-            await scanner.clear();
-            scanner = null;
+          const video = getVideoElement();
+          if (video) {
+            video.setAttribute("playsinline", "true");
+            video.muted = true;
           }
-          setStatus("Cámara detenida.", "");
-        } catch (_) {
-          setStatus("No pude detener la cámara.", "err");
+
+          startFallbackLoop(scanSession);
+          setStatus("Camara activa. Mostra el QR centrado y quieto.", "");
+        } catch (error) {
+          console.error(error);
+          setStatus("No pude iniciar la camara o leer el QR.", "err");
         }
       }
 
@@ -426,7 +543,7 @@
           if (res && res.ok) {
             setStatus("Listo para escanear.", "");
           } else {
-            setStatus("La API respondió, pero no como esperaba.", "warn");
+            setStatus("La API respondio, pero no como esperaba.", "warn");
           }
         } catch (error) {
           setStatus("No pude conectar con Apps Script: " + error.message, "err");
