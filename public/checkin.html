@@ -138,16 +138,24 @@
 
       .status {
         margin-top: 16px;
-        min-height: 62px;
+        min-height: 160px;
         display: flex;
         align-items: center;
         justify-content: center;
         text-align: center;
-        padding: 14px;
-        border-radius: 14px;
+        padding: 22px;
+        border-radius: 18px;
         border: 1px solid #27272a;
         background: #09090b;
-        font-size: 18px;
+        font-size: clamp(28px, 5vw, 54px);
+        font-weight: 800;
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+        transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+      }
+
+      .status.is-flash {
+        transform: scale(1.01);
       }
 
       .ok {
@@ -228,7 +236,8 @@
         }
 
         .status {
-          font-size: 16px;
+          min-height: 130px;
+          font-size: clamp(24px, 8vw, 40px);
         }
 
         .overlay-box {
@@ -292,6 +301,7 @@
       let scanLoopId = 0;
       let selectedCameraId = "";
       let mirrorMode = "auto";
+      let statusResetTimer = 0;
 
       const statusEl = document.getElementById("status");
       const manualQrEl = document.getElementById("manualQr");
@@ -306,6 +316,21 @@
         statusEl.className = "status";
         if (type) statusEl.classList.add(type);
         statusEl.textContent = message;
+      }
+
+      function setTemporaryStatus(message, type = "", duration = 3800) {
+        if (statusResetTimer) {
+          window.clearTimeout(statusResetTimer);
+          statusResetTimer = 0;
+        }
+
+        setStatus(message, type);
+        statusEl.classList.add("is-flash");
+
+        statusResetTimer = window.setTimeout(() => {
+          statusResetTimer = 0;
+          setStatus(stream ? "Camara activa. Mostra el QR." : "Listo para escanear.");
+        }, duration);
       }
 
       function beepSuccess() {
@@ -454,6 +479,11 @@
       }
 
       async function stopScanner() {
+        if (statusResetTimer) {
+          window.clearTimeout(statusResetTimer);
+          statusResetTimer = 0;
+        }
+
         if (scanLoopId) {
           window.cancelAnimationFrame(scanLoopId);
           scanLoopId = 0;
@@ -531,10 +561,10 @@
           if (!res.ok && !res.found) {
             setStatus(res.message || "No se pudo registrar.", "err");
           } else if (res.duplicate) {
-            setStatus(buildSuccessMessage(res, res.message || "Ya registrado."), "warn");
+            setTemporaryStatus(buildSuccessMessage(res, res.message || "Ya registrado."), "warn");
             beepSuccess();
           } else {
-            setStatus(buildSuccessMessage(res, res.message || "Check-in registrado."), "ok");
+            setTemporaryStatus(buildSuccessMessage(res, res.message || "Check-in registrado."), "ok");
             beepSuccess();
           }
 
@@ -606,7 +636,7 @@
 
           syncControls();
           startScanLoop();
-          setStatus("Camara activa. Mostra el QR centrado y quieto.", "");
+          setStatus("Camara activa. Mostra el QR.", "");
         } catch (error) {
           console.error(error);
           setStatus("No pude iniciar la camara o leer el QR.", "err");
