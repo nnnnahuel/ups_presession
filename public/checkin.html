@@ -168,20 +168,20 @@
         color: #fecaca;
       }
 
-      .diag {
+      .tools {
         margin-top: 18px;
         padding-top: 18px;
         border-top: 1px solid #27272a;
       }
 
-      .diag-grid {
+      .tools-grid {
         display: grid;
-        grid-template-columns: 1fr auto auto;
+        grid-template-columns: 1fr auto;
         gap: 10px;
         align-items: end;
       }
 
-      .diag select,
+      .tools select,
       .manual input {
         width: 100%;
         border: 1px solid #3f3f46;
@@ -191,19 +191,6 @@
         padding: 14px;
       }
 
-      .diag-info {
-        margin-top: 12px;
-        padding: 12px 14px;
-        border-radius: 12px;
-        border: 1px solid #27272a;
-        background: #09090b;
-        color: #d4d4d8;
-        font-size: 13px;
-        line-height: 1.5;
-        white-space: pre-line;
-        word-break: break-word;
-      }
-
       .manual {
         margin-top: 20px;
         padding-top: 20px;
@@ -211,7 +198,7 @@
       }
 
       .manual label,
-      .diag label {
+      .tools label {
         display: block;
         margin-bottom: 8px;
         font-size: 14px;
@@ -232,7 +219,7 @@
 
       @media (max-width: 640px) {
         .manual-row,
-        .diag-grid {
+        .tools-grid {
           grid-template-columns: 1fr;
         }
 
@@ -273,16 +260,14 @@
 
         <div id="status" class="status">Listo para escanear.</div>
 
-        <div class="diag">
-          <label for="cameraSelect">Diagnostico</label>
-          <div class="diag-grid">
+        <div class="tools">
+          <label for="cameraSelect">Camara</label>
+          <div class="tools-grid">
             <select id="cameraSelect">
               <option value="">Seleccionar camara</option>
             </select>
             <button class="secondary" id="mirrorBtn">Espejo: Auto</button>
-            <button class="secondary" id="scanFrameBtn">Escanear frame</button>
           </div>
-          <div id="diagInfo" class="diag-info">Esperando camara...</div>
         </div>
 
         <div class="manual">
@@ -307,7 +292,6 @@
       let scanLoopId = 0;
       let selectedCameraId = "";
       let mirrorMode = "auto";
-      let lastScanDetail = "sin intentos";
 
       const statusEl = document.getElementById("status");
       const manualQrEl = document.getElementById("manualQr");
@@ -317,17 +301,11 @@
       const videoEl = document.getElementById("readerVideo");
       const cameraSelectEl = document.getElementById("cameraSelect");
       const mirrorBtn = document.getElementById("mirrorBtn");
-      const scanFrameBtn = document.getElementById("scanFrameBtn");
-      const diagInfoEl = document.getElementById("diagInfo");
 
       function setStatus(message, type = "") {
         statusEl.className = "status";
         if (type) statusEl.classList.add(type);
         statusEl.textContent = message;
-      }
-
-      function setDiagInfo(message) {
-        diagInfoEl.textContent = message;
       }
 
       function beepSuccess() {
@@ -354,40 +332,43 @@
         return "Espejo: Auto";
       }
 
-      function shouldMirrorPreview() {
-        return mirrorMode !== "off";
-      }
-
       function applyMirrorToPreview() {
-        videoEl.style.transform = shouldMirrorPreview() ? "scaleX(-1)" : "scaleX(1)";
+        const shouldMirror = mirrorMode !== "off";
+        videoEl.style.transform = shouldMirror ? "scaleX(-1)" : "scaleX(1)";
         videoEl.style.transformOrigin = "center";
       }
 
-      function updateDiagnostics(extraMessage = "") {
-        const lines = [
-          "Lector: jsQR",
-          "Camara elegida: " + (selectedCameraId || "auto"),
-          "Modo espejo: " + mirrorMode,
-          "jsQR cargado: " + (typeof window.jsQR === "function" ? "si" : "no")
-        ];
-
-        if (stream) {
-          const track = stream.getVideoTracks()[0];
-          const settings = track && track.getSettings ? track.getSettings() : null;
-
-          lines.push(
-            "Video real: " + (videoEl.videoWidth || 0) + "x" + (videoEl.videoHeight || 0),
-            "Track label: " + (track ? track.label || "sin label" : "sin track"),
-            "Track settings: " + (settings ? JSON.stringify(settings) : "n/d")
-          );
-        } else {
-          lines.push("Video real: sin video");
-        }
-
-        lines.push("Ultimo intento: " + (extraMessage || lastScanDetail));
-        setDiagInfo(lines.join("\n"));
+      function syncControls() {
         mirrorBtn.textContent = getMirrorModeLabel();
         applyMirrorToPreview();
+      }
+
+      function extractFirstName(res) {
+        const directName =
+          res?.firstName ||
+          res?.firstname ||
+          res?.nombre ||
+          res?.athleteFirstName ||
+          res?.athleteName ||
+          res?.name ||
+          res?.participantName ||
+          res?.playerName ||
+          res?.athlete?.firstName ||
+          res?.athlete?.firstname ||
+          res?.athlete?.name ||
+          "";
+
+        const cleaned = String(directName || "").trim();
+        if (!cleaned) return "";
+        return cleaned.split(/\s+/)[0];
+      }
+
+      function buildSuccessMessage(res, fallback) {
+        const firstName = extractFirstName(res);
+        if (firstName) {
+          return "Hola " + firstName + " " + "\u{1F5A4}";
+        }
+        return fallback;
       }
 
       function jsonp(url) {
@@ -484,28 +465,24 @@
         }
 
         videoEl.srcObject = null;
-        lastScanDetail = "camara detenida";
         setStatus("Camara detenida.", "");
-        updateDiagnostics();
+        syncControls();
       }
 
       function decodeFrame(mirrored) {
         if (typeof window.jsQR !== "function") {
-          lastScanDetail = "jsQR no cargado";
           return null;
         }
 
         const width = videoEl.videoWidth;
         const height = videoEl.videoHeight;
         if (!width || !height) {
-          lastScanDetail = "video sin dimensiones";
           return null;
         }
 
         const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) {
-          lastScanDetail = "canvas no disponible";
           return null;
         }
 
@@ -524,10 +501,6 @@
         const result = window.jsQR(imageData.data, width, height, {
           inversionAttempts: "attemptBoth"
         });
-
-        lastScanDetail = result
-          ? "detectado en frame " + (mirrored ? "espejado" : "normal")
-          : "sin lectura en frame " + (mirrored ? "espejado" : "normal");
 
         return result ? result.data : null;
       }
@@ -558,10 +531,10 @@
           if (!res.ok && !res.found) {
             setStatus(res.message || "No se pudo registrar.", "err");
           } else if (res.duplicate) {
-            setStatus(res.message || "Ya registrado.", "warn");
+            setStatus(buildSuccessMessage(res, res.message || "Ya registrado."), "warn");
             beepSuccess();
           } else {
-            setStatus(res.message || "Check-in registrado.", "ok");
+            setStatus(buildSuccessMessage(res, res.message || "Check-in registrado."), "ok");
             beepSuccess();
           }
 
@@ -573,35 +546,8 @@
         }
       }
 
-      async function scanCurrentFrame() {
-        if (!stream || videoEl.readyState < 2) {
-          lastScanDetail = "no habia video listo";
-          updateDiagnostics();
-          setStatus("La camara todavia no esta lista.", "warn");
-          return;
-        }
-
-        const attempts = mirrorMode === "on"
-          ? [true]
-          : mirrorMode === "off"
-            ? [false]
-            : [false, true];
-
-        for (const mirrored of attempts) {
-          const result = decodeFrame(mirrored);
-          if (result) {
-            updateDiagnostics();
-            saveCheckin(result);
-            return;
-          }
-        }
-
-        updateDiagnostics();
-        setStatus("No pude leer este frame.", "warn");
-      }
-
       function startScanLoop() {
-        const tick = async () => {
+        const tick = () => {
           if (!stream) return;
 
           if (videoEl.readyState >= 2 && !isSaving) {
@@ -614,7 +560,6 @@
             for (const mirrored of attempts) {
               const result = decodeFrame(mirrored);
               if (result) {
-                updateDiagnostics();
                 saveCheckin(result);
                 break;
               }
@@ -659,15 +604,11 @@
             selectedCameraId = settings && settings.deviceId ? settings.deviceId : "";
           }
 
-          lastScanDetail = "scanner iniciado";
-          applyMirrorToPreview();
-          updateDiagnostics();
+          syncControls();
           startScanLoop();
           setStatus("Camara activa. Mostra el QR centrado y quieto.", "");
         } catch (error) {
           console.error(error);
-          lastScanDetail = "error al iniciar";
-          updateDiagnostics();
           setStatus("No pude iniciar la camara o leer el QR.", "err");
         }
       }
@@ -687,18 +628,11 @@
 
       cameraSelectEl.addEventListener("change", () => {
         selectedCameraId = cameraSelectEl.value;
-        lastScanDetail = "cambio de camara";
-        updateDiagnostics();
       });
 
       mirrorBtn.addEventListener("click", () => {
         mirrorMode = mirrorMode === "auto" ? "off" : mirrorMode === "off" ? "on" : "auto";
-        lastScanDetail = "cambio de espejo";
-        updateDiagnostics();
-      });
-
-      scanFrameBtn.addEventListener("click", () => {
-        scanCurrentFrame();
+        syncControls();
       });
 
       (async function init() {
@@ -716,7 +650,7 @@
           setStatus("No pude conectar con Apps Script: " + error.message, "err");
         }
 
-        updateDiagnostics("pantalla lista");
+        syncControls();
       })();
     </script>
   </body>
