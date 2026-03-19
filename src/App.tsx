@@ -125,7 +125,7 @@ function sanitizeHistory(raw: string | null): SavedSession[] {
     if (!Array.isArray(parsed)) return [];
 
     return parsed
-      .map((entry: Partial<SavedSession>) => ({
+      .map((entry: Partial<SavedSession>): SavedSession => ({
         id: entry.id || crypto.randomUUID(),
         createdAt: entry.createdAt || new Date().toISOString(),
         sessionTime: entry.sessionTime || "",
@@ -134,18 +134,20 @@ function sanitizeHistory(raw: string | null): SavedSession[] {
           ? entry.movements.filter((item): item is string => typeof item === "string")
           : [],
         athletes: Array.isArray(entry.athletes)
-          ? entry.athletes.map((athlete: Partial<Athlete>) => ({
-              id: athlete.id || crypto.randomUUID(),
-              name: athlete.name || "",
-              status: athlete.status === "autonomo" ? "autonomo" : "guiado",
-              startExercise: athlete.startExercise || "",
-              isNew: athlete.status === "autonomo" ? false : Boolean(athlete.isNew),
-            }))
+          ? entry.athletes.map(
+              (athlete: Partial<Athlete>): Athlete => ({
+                id: athlete.id || crypto.randomUUID(),
+                name: athlete.name || "",
+                status: athlete.status === "autonomo" ? "autonomo" : "guiado",
+                startExercise: athlete.startExercise || "",
+                isNew: athlete.status === "autonomo" ? false : Boolean(athlete.isNew),
+              })
+            )
           : [],
         attentionOrder: Array.isArray(entry.attentionOrder)
           ? entry.attentionOrder
               .filter(Boolean)
-              .map((item: Partial<AttentionItem>) => ({
+              .map((item: Partial<AttentionItem>): AttentionItem => ({
                 athleteId: item.athleteId || crypto.randomUUID(),
                 athleteName: item.athleteName || "",
                 startExercise: item.startExercise || "",
