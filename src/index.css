@@ -293,11 +293,10 @@ textarea {
 
 .preset-chip {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-width: 82px;
-  padding: 10px 12px;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  padding: 10px 14px;
   border: 1px solid #3f3f46;
   border-radius: 14px;
   background: #111114;
@@ -313,11 +312,6 @@ textarea {
   background: #f4f4f5;
   border-color: #f4f4f5;
   color: #09090b;
-}
-
-.preset-chip small {
-  font-size: 11px;
-  opacity: 0.75;
 }
 
 .preset-help {

@@ -693,7 +693,7 @@ export default function App() {
             <div>
               <label>Movimientos del día</label>
               <div className="preset-picker">
-                {Object.entries(MOVEMENT_PRESETS).map(([presetId, movements]) => (
+                {Object.entries(MOVEMENT_PRESETS).map(([presetId]) => (
                   <button
                     type="button"
                     key={presetId}
@@ -703,12 +703,11 @@ export default function App() {
                     onClick={() => applyMovementPreset(presetId as MovementPresetId)}
                   >
                     <span>{presetId}</span>
-                    <small>{movements.length} ejercicios</small>
                   </button>
                 ))}
               </div>
               <textarea
-                rows={10}
+                rows={6}
                 value={state.movementsText}
                 onChange={(e) => updateMovementsText(e.target.value)}
                 placeholder={
