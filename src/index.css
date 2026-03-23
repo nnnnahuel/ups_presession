@@ -367,6 +367,17 @@ textarea {
   gap: 10px;
 }
 
+.history-table-head {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 0 12px 2px;
+  color: #a1a1aa;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .history-item {
   width: 100%;
   text-align: left;
@@ -374,7 +385,11 @@ textarea {
   border-radius: 14px;
   background: #09090b;
   color: #f4f4f5;
-  padding: 12px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
 }
 
 .history-item:hover {
@@ -387,21 +402,31 @@ textarea {
   background: #121217;
 }
 
-.history-item-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
+.history-cell {
+  min-width: 0;
 }
 
-.history-item-pills {
-  display: flex;
+.history-cell-time {
+  display: grid;
+  gap: 2px;
+}
+
+.history-cell-coach strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-cell-stats {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
 }
 
-.history-item-pills span {
+.history-cell-stats span {
   display: inline-flex;
   align-items: center;
   padding: 4px 8px;
@@ -549,6 +574,10 @@ textarea {
   gap: 10px;
 }
 
+.compact-tag-wrap {
+  gap: 8px;
+}
+
 .exercise-group-head {
   display: flex;
   justify-content: space-between;
@@ -604,6 +633,22 @@ textarea {
   font-size: 12px;
 }
 
+.compact-person-tag {
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 10px;
+}
+
+.compact-person-tag strong {
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.compact-person-tag span {
+  font-size: 11px;
+}
+
 .athlete-title {
   font-size: 17px;
   font-weight: 700;
@@ -642,6 +687,40 @@ textarea {
 
   .history-list-card {
     position: static;
+  }
+
+  .history-list {
+    gap: 8px;
+  }
+
+  .history-table-head,
+  .history-item {
+    grid-template-columns: 78px minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .history-table-head {
+    padding: 0 8px 2px;
+    font-size: 10px;
+  }
+
+  .history-item {
+    padding: 9px 10px;
+    border-radius: 12px;
+  }
+
+  .history-cell-time strong,
+  .history-cell-coach strong {
+    font-size: 13px;
+  }
+
+  .history-cell-stats {
+    gap: 4px;
+  }
+
+  .history-cell-stats span {
+    padding: 3px 6px;
+    font-size: 11px;
   }
 
   .field-grid {

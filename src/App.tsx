@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type AthleteStatus = "autonomo" | "guiado";
 
@@ -294,6 +294,7 @@ export default function App() {
   const [saveMessage, setSaveMessage] = useState("");
   const [storageMode, setStorageMode] = useState<"shared" | "local">("local");
   const [isSavingSession, setIsSavingSession] = useState(false);
+  const historyDetailRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const loaded = sanitizeLoadedState(localStorage.getItem(STORAGE_KEY));
@@ -337,6 +338,16 @@ export default function App() {
     const timeout = window.setTimeout(() => setSaveMessage(""), 2200);
     return () => window.clearTimeout(timeout);
   }, [saveMessage]);
+
+  useEffect(() => {
+    if (viewMode !== "history" || !selectedSessionId) return;
+    if (!window.matchMedia("(max-width: 1100px)").matches) return;
+
+    historyDetailRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [selectedSessionId, viewMode]);
 
   const movementList = useMemo(() => {
     return state.movementsText
@@ -575,27 +586,39 @@ export default function App() {
 
               <div className="history-list">
                 {savedSessions.length > 0 ? (
-                  savedSessions.map((session) => (
-                    <button
-                      type="button"
-                      key={session.id}
-                      className={`history-item ${
-                        selectedSessionId === session.id ? "history-item-active" : ""
-                      }`}
-                      onClick={() => setSelectedSessionId(session.id)}
-                    >
-                      <div className="history-item-head">
-                        <strong>{session.sessionTime || "Sin hora"}</strong>
-                        <span className="small-label">{formatSavedAt(session.createdAt)}</span>
-                      </div>
-                      <div className="small-label">{session.coachName || "Sin coach"}</div>
-                      <div className="history-item-pills">
-                        <span>{session.athletes.length} atletas</span>
-                        <span>{session.movements.length} movimientos</span>
-                        <span>{session.attentionOrder.length} pasos</span>
-                      </div>
-                    </button>
-                  ))
+                  <>
+                    <div className="history-table-head">
+                      <span>Horario</span>
+                      <span>Coach</span>
+                      <span>Datos</span>
+                    </div>
+
+                    {savedSessions.map((session) => (
+                      <button
+                        type="button"
+                        key={session.id}
+                        className={`history-item ${
+                          selectedSessionId === session.id ? "history-item-active" : ""
+                        }`}
+                        onClick={() => setSelectedSessionId(session.id)}
+                      >
+                        <div className="history-cell history-cell-time">
+                          <strong>{session.sessionTime || "Sin hora"}</strong>
+                          <span className="small-label">{formatSavedAt(session.createdAt)}</span>
+                        </div>
+
+                        <div className="history-cell history-cell-coach">
+                          <strong>{session.coachName || "Sin coach"}</strong>
+                        </div>
+
+                        <div className="history-cell history-cell-stats">
+                          <span>{session.athletes.length} A</span>
+                          <span>{session.movements.length} M</span>
+                          <span>{session.attentionOrder.length} P</span>
+                        </div>
+                      </button>
+                    ))}
+                  </>
                 ) : (
                   <div className="order-item">
                     <div className="order-main">Todavía no hay sesiones guardadas</div>
@@ -604,7 +627,7 @@ export default function App() {
               </div>
             </section>
 
-            <section className="card">
+            <section className="card" ref={historyDetailRef}>
               {selectedSession ? (
                 <>
                   <div className="section-header">
@@ -617,33 +640,13 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="mini-stats" style={{ marginBottom: 16 }}>
-                    <span>{selectedSession.athletes.length} atletas</span>
-                    <span>{selectedSession.movements.length} movimientos</span>
-                    <span>{selectedSession.attentionOrder.length} pasos</span>
-                  </div>
-
-                  <div className="history-detail-section">
-                    <div className="small-label">Movimientos</div>
-                    <div className="movement-pills">
-                      {selectedSession.movements.map((movement, index) => (
-                        <span className="pill" key={`${movement}-${index}`}>
-                          {movement}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
                   <div className="history-detail-section">
                     <div className="small-label">Atletas</div>
-                    <div className="tag-wrap">
+                    <div className="tag-wrap compact-tag-wrap">
                       {selectedSession.athletes.map((athlete) => (
-                        <div className="person-tag" key={athlete.id}>
+                        <div className="person-tag compact-person-tag" key={athlete.id}>
                           <strong>{athlete.name || "Sin nombre"}</strong>
-                          <span>
-                            {athlete.startExercise || "Sin ejercicio"} ·{" "}
-                            {statusLabel(athlete.status)}
-                          </span>
+                          <span>{statusLabel(athlete.status)}</span>
                         </div>
                       ))}
                     </div>
@@ -691,9 +694,6 @@ export default function App() {
                           <div className="order-step-badge">{index + 1}</div>
                           <div className="order-content">
                             <div className="order-main">{item.athleteName || "Sin nombre"}</div>
-                            <div className="order-sub">
-                              {item.startExercise || "Sin ejercicio asignado"}
-                            </div>
                           </div>
                           <div className={`order-tag ${attentionStepClass(item.step)}`}>
                             {item.step}
