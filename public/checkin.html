@@ -104,6 +104,13 @@
         padding: 14px;
       }
 
+      .camera-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 240px;
+        gap: 14px;
+        align-items: stretch;
+      }
+
       #reader {
         position: relative;
         overflow: hidden;
@@ -182,6 +189,33 @@
         border-top: 1px solid #27272a;
       }
 
+      .camera-notes {
+        border: 1px solid #27272a;
+        border-radius: 16px;
+        background: #111114;
+        padding: 16px;
+      }
+
+      .camera-notes h2 {
+        margin: 0 0 10px 0;
+        font-size: 15px;
+        color: #f4f4f5;
+      }
+
+      .camera-notes p {
+        margin: 0 0 8px 0;
+        font-size: 13px;
+        color: #d4d4d8;
+      }
+
+      .camera-notes ol {
+        margin: 0;
+        padding-left: 18px;
+        color: #f4f4f5;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
       .tools-grid {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -226,6 +260,7 @@
       }
 
       @media (max-width: 640px) {
+        .camera-layout,
         .manual-row,
         .tools-grid {
           grid-template-columns: 1fr;
@@ -258,13 +293,24 @@
           <button class="secondary" id="stopBtn">Detener camara</button>
         </div>
 
-        <div class="reader-wrap">
-          <div id="reader">
-            <video id="readerVideo" autoplay muted playsinline></video>
-            <div class="overlay">
-              <div class="overlay-box"></div>
+        <div class="camera-layout">
+          <div class="reader-wrap">
+            <div id="reader">
+              <video id="readerVideo" autoplay muted playsinline></video>
+              <div class="overlay">
+                <div class="overlay-box"></div>
+              </div>
             </div>
           </div>
+
+          <aside class="camera-notes">
+            <h2>Notas</h2>
+            <p>Si el QR no se toma:</p>
+            <ol>
+              <li>Baja el brillo de tu celular.</li>
+              <li>Agranda la imagen del QR.</li>
+            </ol>
+          </aside>
         </div>
 
         <div id="status" class="status">Listo para escanear.</div>
@@ -552,7 +598,7 @@
         lastText = cleaned;
         cooldownUntil = now + 1800;
 
-        setStatus("Registrando...", "");
+        setStatus("Verificando QR... Ya podes retirar el QR de la camara.", "warn");
 
         try {
           const url = APPS_SCRIPT_URL + "?action=register&qrText=" + encodeURIComponent(cleaned);
