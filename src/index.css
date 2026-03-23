@@ -441,6 +441,20 @@ textarea {
   margin-top: 18px;
 }
 
+.history-detail-preset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid #3a3a44;
+  background: #141419;
+  color: #f4f4f5;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .end-cta-card {
   background: linear-gradient(180deg, #1a1a1f 0%, #16161a 100%);
 }
@@ -578,6 +592,27 @@ textarea {
   gap: 8px;
 }
 
+.compact-athlete-table {
+  display: grid;
+  gap: 6px;
+}
+
+.compact-athlete-row {
+  display: grid;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #27272a;
+  border-radius: 10px;
+  background: #101014;
+}
+
+.compact-athlete-row span {
+  font-size: 13px;
+  line-height: 1.2;
+  color: #e4e4e7;
+}
+
 .exercise-group-head {
   display: flex;
   justify-content: space-between;
@@ -631,22 +666,6 @@ textarea {
 .person-tag span {
   color: #a1a1aa;
   font-size: 12px;
-}
-
-.compact-person-tag {
-  gap: 2px;
-  min-width: 0;
-  padding: 7px 9px;
-  border-radius: 10px;
-}
-
-.compact-person-tag strong {
-  font-size: 13px;
-  line-height: 1.15;
-}
-
-.compact-person-tag span {
-  font-size: 11px;
 }
 
 .athlete-title {

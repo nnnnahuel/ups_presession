@@ -282,6 +282,18 @@ function buildExerciseGroups(athletes: Athlete[], movements: string[]) {
   });
 }
 
+function detectMovementPreset(movements: string[]): MovementPresetId | null {
+  const normalized = movements.map((movement) => movement.trim()).filter(Boolean);
+
+  const match = Object.entries(MOVEMENT_PRESETS).find(([, presetMovements]) => {
+    if (presetMovements.length !== normalized.length) return false;
+
+    return presetMovements.every((movement, index) => movement.trim() === normalized[index]);
+  });
+
+  return (match?.[0] as MovementPresetId | undefined) ?? null;
+}
+
 export default function App() {
   const [state, setState] = useState<SessionState>(createEmptyState);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -377,6 +389,11 @@ export default function App() {
   const selectedSessionExerciseGroups = useMemo(() => {
     if (!selectedSession) return [];
     return buildExerciseGroups(selectedSession.athletes, selectedSession.movements);
+  }, [selectedSession]);
+
+  const selectedSessionPreset = useMemo(() => {
+    if (!selectedSession) return null;
+    return detectMovementPreset(selectedSession.movements);
   }, [selectedSession]);
 
   function updateAthlete(id: string, patch: Partial<Athlete>) {
@@ -613,7 +630,7 @@ export default function App() {
 
                         <div className="history-cell history-cell-stats">
                           <span>{session.athletes.length} A</span>
-                          <span>{session.movements.length} M</span>
+                          <span>{detectMovementPreset(session.movements) || "-"}</span>
                           <span>{session.attentionOrder.length} P</span>
                         </div>
                       </button>
@@ -638,15 +655,17 @@ export default function App() {
                         {selectedSession.coachName || "Sin coach"}
                       </div>
                     </div>
+                    {selectedSessionPreset ? (
+                      <div className="history-detail-preset">{selectedSessionPreset}</div>
+                    ) : null}
                   </div>
 
                   <div className="history-detail-section">
                     <div className="small-label">Atletas</div>
-                    <div className="tag-wrap compact-tag-wrap">
+                    <div className="compact-athlete-table">
                       {selectedSession.athletes.map((athlete) => (
-                        <div className="person-tag compact-person-tag" key={athlete.id}>
-                          <strong>{athlete.name || "Sin nombre"}</strong>
-                          <span>{statusLabel(athlete.status)}</span>
+                        <div className="compact-athlete-row" key={athlete.id}>
+                          <span>{athlete.name || "Sin nombre"}</span>
                         </div>
                       ))}
                     </div>
