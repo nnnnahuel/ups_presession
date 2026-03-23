@@ -35,9 +35,47 @@ type SavedSession = {
 };
 
 type ViewMode = "board" | "history";
+type MovementPresetId = "M1" | "M2" | "M3" | "M4" | "M5";
 
 const STORAGE_KEY = "ups-session-v11";
 const HISTORY_STORAGE_KEY = "ups-session-history-v1";
+const MOVEMENT_PRESETS: Record<MovementPresetId, string[]> = {
+  M1: [
+    "//Hip Thrust B-Stance & Step Up c/ Mancuerna (Glúteos)",
+    "Sentadilla Globet Pulso c/ Talón Elevado",
+    "Press Plano c/ Mancuernas",
+    "Rack Chin",
+    "Extra",
+  ],
+  M2: [
+    "Peso Muerto Rumano c/ Mancuernas",
+    "Sentadillas Bulgaras",
+    "Elevaciones laterales 1 Brazo",
+    "Remo Abierto c/ Mancuernas",
+    "Extra",
+  ],
+  M3: [
+    "Puente de Glúteos 1 Pierna o Peso Muerto Rumano 1 Pierna",
+    "Sentadillas Splits (Glúteos)",
+    "Press Militar Sentado c/ Mancuerna",
+    "Rack Chin Supino",
+    "Extra",
+  ],
+  M4: [
+    "Curl de Isquios c/ Mancuernas",
+    "Sentadilla Globet Pulso c/ Talón Elevado",
+    "Press Militar c/ Mancuernas",
+    "Rompecraneos y Floor Press Cerrado c/ Mancuernas",
+    "Extra",
+  ],
+  M5: [
+    "Peso Muerto Rumano c/ Mancuernas",
+    "Sentadilla Split Talón Elevado Asistido",
+    "Rompecraneos y Floor Press Cerrado c/ Mancuernas",
+    "Remo Abierto c/ Mancuernas",
+    "Extra",
+  ],
+};
 
 const TURN_TIMES = Array.from({ length: 16 }, (_, index) => {
   const hour = 7 + index;
@@ -214,6 +252,7 @@ export default function App() {
   const [state, setState] = useState<SessionState>(createEmptyState);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [viewMode, setViewMode] = useState<ViewMode>("board");
+  const [selectedPreset, setSelectedPreset] = useState<MovementPresetId | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [collapsedAthletes, setCollapsedAthletes] = useState<Record<string, boolean>>({});
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
@@ -355,9 +394,29 @@ export default function App() {
     setStep(2);
   }
 
+  function applyMovementPreset(presetId: MovementPresetId) {
+    setSelectedPreset(presetId);
+    setState((prev) => ({
+      ...prev,
+      movementsText: MOVEMENT_PRESETS[presetId].join("\n"),
+    }));
+  }
+
+  function updateMovementsText(value: string) {
+    setState((prev) => ({ ...prev, movementsText: value }));
+
+    const matchingPreset =
+      (Object.entries(MOVEMENT_PRESETS).find(
+        ([, movements]) => movements.join("\n") === value
+      )?.[0] as MovementPresetId | undefined) ?? null;
+
+    setSelectedPreset(matchingPreset);
+  }
+
   function resetAll() {
     localStorage.removeItem(STORAGE_KEY);
     setState(createEmptyState());
+    setSelectedPreset(null);
     setCollapsedAthletes({});
     setStep(1);
   }
@@ -403,6 +462,7 @@ export default function App() {
     setViewMode("board");
     localStorage.removeItem(STORAGE_KEY);
     setState(createEmptyState());
+    setSelectedPreset(null);
     setCollapsedAthletes({});
     setStep(1);
     setIsSavingSession(false);
@@ -632,16 +692,33 @@ export default function App() {
 
             <div>
               <label>Movimientos del día</label>
+              <div className="preset-picker">
+                {Object.entries(MOVEMENT_PRESETS).map(([presetId, movements]) => (
+                  <button
+                    type="button"
+                    key={presetId}
+                    className={`preset-chip ${
+                      selectedPreset === presetId ? "preset-chip-active" : ""
+                    }`}
+                    onClick={() => applyMovementPreset(presetId as MovementPresetId)}
+                  >
+                    <span>{presetId}</span>
+                    <small>{movements.length} ejercicios</small>
+                  </button>
+                ))}
+              </div>
               <textarea
                 rows={10}
                 value={state.movementsText}
-                onChange={(e) =>
-                  setState((prev) => ({ ...prev, movementsText: e.target.value }))
-                }
+                onChange={(e) => updateMovementsText(e.target.value)}
                 placeholder={
                   "Elevaciones laterales\nPeso Muerto Rumano\nFlexiones de brazos\nSentadillas búlgaras\nExtra"
                 }
               />
+              <div className="small-label preset-help">
+                Tocá un bloque `M1`-`M5` para cargar sus ejercicios y después podés ajustar
+                el texto manualmente.
+              </div>
             </div>
 
             <div className="mini-stats">

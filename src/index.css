@@ -284,6 +284,46 @@ textarea {
   margin-top: 14px;
 }
 
+.preset-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.preset-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 82px;
+  padding: 10px 12px;
+  border: 1px solid #3f3f46;
+  border-radius: 14px;
+  background: #111114;
+  color: #f4f4f5;
+}
+
+.preset-chip:hover {
+  background: #18181d;
+  border-color: #5a5a66;
+}
+
+.preset-chip-active {
+  background: #f4f4f5;
+  border-color: #f4f4f5;
+  color: #09090b;
+}
+
+.preset-chip small {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.preset-help {
+  margin-top: 8px;
+}
+
 .compact-session-card .movement-pills {
   gap: 6px;
   margin-top: 10px;
