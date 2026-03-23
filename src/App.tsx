@@ -248,6 +248,40 @@ function buildAttentionOrder(athletes: Athlete[]): AttentionItem[] {
   ];
 }
 
+function buildExerciseGroups(athletes: Athlete[], movements: string[]) {
+  const movementOrder = new Map(movements.map((movement, index) => [movement.trim(), index]));
+  const map = new Map<string, Athlete[]>();
+
+  for (const athlete of athletes) {
+    if (athlete.name.trim() === "") continue;
+
+    const key = athlete.startExercise.trim() || "Sin asignar";
+
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+
+    map.get(key)!.push(athlete);
+  }
+
+  return Array.from(map.entries()).sort((a, b) => {
+    if (a[0] === "Sin asignar") return 1;
+    if (b[0] === "Sin asignar") return -1;
+
+    const aIndex = movementOrder.get(a[0]);
+    const bIndex = movementOrder.get(b[0]);
+
+    if (aIndex !== undefined && bIndex !== undefined) {
+      return aIndex - bIndex;
+    }
+
+    if (aIndex !== undefined) return -1;
+    if (bIndex !== undefined) return 1;
+
+    return a[0].localeCompare(b[0]);
+  });
+}
+
 export default function App() {
   const [state, setState] = useState<SessionState>(createEmptyState);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -322,28 +356,17 @@ export default function App() {
   }, [state.athletes]);
 
   const groupedByExercise = useMemo(() => {
-    const map = new Map<string, Athlete[]>();
-
-    for (const athlete of namedAthletes) {
-      const key = athlete.startExercise.trim() || "Sin asignar";
-
-      if (!map.has(key)) {
-        map.set(key, []);
-      }
-
-      map.get(key)!.push(athlete);
-    }
-
-    return Array.from(map.entries()).sort((a, b) => {
-      if (a[0] === "Sin asignar") return 1;
-      if (b[0] === "Sin asignar") return -1;
-      return a[0].localeCompare(b[0]);
-    });
-  }, [namedAthletes]);
+    return buildExerciseGroups(namedAthletes, movementList);
+  }, [namedAthletes, movementList]);
 
   const selectedSession = useMemo(() => {
     return savedSessions.find((session) => session.id === selectedSessionId) || null;
   }, [savedSessions, selectedSessionId]);
+
+  const selectedSessionExerciseGroups = useMemo(() => {
+    if (!selectedSession) return [];
+    return buildExerciseGroups(selectedSession.athletes, selectedSession.movements);
+  }, [selectedSession]);
 
   function updateAthlete(id: string, patch: Partial<Athlete>) {
     setState((prev) => ({
@@ -623,6 +646,37 @@ export default function App() {
                           </span>
                         </div>
                       ))}
+                    </div>
+                  </div>
+
+                  <div className="history-detail-section">
+                    <div className="small-label">Mapa visual</div>
+                    <div className="stack">
+                      {selectedSessionExerciseGroups.length > 0 ? (
+                        selectedSessionExerciseGroups.map(([exercise, athletes]) => (
+                          <div className="exercise-group" key={`history-${exercise}`}>
+                            <div className="exercise-group-head">
+                              <strong>{exercise}</strong>
+                              <span className="group-count">
+                                {athletes.length} atleta{athletes.length === 1 ? "" : "s"}
+                              </span>
+                            </div>
+
+                            <div className="tag-wrap">
+                              {athletes.map((athlete) => (
+                                <div className="person-tag" key={`history-map-${athlete.id}`}>
+                                  <strong>{athlete.name || "Sin nombre"}</strong>
+                                  <span>{statusLabel(athlete.status)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="order-item">
+                          <div className="order-main">Todavía no hay mapa visual</div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
