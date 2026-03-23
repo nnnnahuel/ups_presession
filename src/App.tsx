@@ -673,12 +673,12 @@ export default function App() {
 
                   <div className="history-detail-section">
                     <div className="small-label">Mapa visual</div>
-                    <div className="stack">
+                    <div className="stack visual-map-grid">
                       {selectedSessionExerciseGroups.length > 0 ? (
                         selectedSessionExerciseGroups.map(([exercise, athletes]) => (
                           <div className="exercise-group compact-exercise-group" key={`history-${exercise}`}>
                             <div className="exercise-group-head compact-exercise-group-head">
-                              <strong>{exercise}</strong>
+                              <strong className="compact-exercise-title">{exercise}</strong>
                               <span className="group-count compact-group-count">
                                 {athletes.length} atleta{athletes.length === 1 ? "" : "s"}
                               </span>
@@ -1097,12 +1097,12 @@ export default function App() {
               <section className="card">
                 <h2>Mapa visual</h2>
 
-                <div className="stack">
+                <div className="stack visual-map-grid">
                   {groupedByExercise.length > 0 ? (
                     groupedByExercise.map(([exercise, athletes]) => (
                       <div className="exercise-group compact-exercise-group" key={exercise}>
                         <div className="exercise-group-head compact-exercise-group-head">
-                          <strong>{exercise}</strong>
+                          <strong className="compact-exercise-title">{exercise}</strong>
                           <span className="group-count compact-group-count">
                             {athletes.length} atleta{athletes.length === 1 ? "" : "s"}
                           </span>
