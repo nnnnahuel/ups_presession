@@ -184,8 +184,55 @@
 
       .tools {
         margin-top: 12px;
-        padding-top: 12px;
+      }
+
+      .panel {
+        margin-top: 12px;
+        border: 1px solid #27272a;
+        border-radius: 16px;
+        background: #111114;
+        overflow: hidden;
+      }
+
+      .panel-toggle {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: transparent;
+        color: #f4f4f5;
+        padding: 16px 18px;
+        border-radius: 0;
+      }
+
+      .panel-toggle:hover {
+        background: #17171c;
+      }
+
+      .panel-title {
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .panel-arrow {
+        font-size: 18px;
+        line-height: 1;
+        transition: transform 0.18s ease;
+      }
+
+      .panel.is-open .panel-arrow {
+        transform: rotate(180deg);
+      }
+
+      .panel-body {
+        display: none;
+        padding: 0 18px 18px 18px;
         border-top: 1px solid #27272a;
+      }
+
+      .panel.is-open .panel-body {
+        display: block;
       }
 
       .camera-notes {
@@ -238,8 +285,6 @@
 
       .manual {
         margin-top: 12px;
-        padding-top: 12px;
-        border-top: 1px solid #27272a;
       }
 
       .manual label,
@@ -315,23 +360,33 @@
 
         <div id="status" class="status">Listo para escanear.</div>
 
-        <div class="tools">
-          <label for="cameraSelect">Camara</label>
-          <div class="tools-grid">
-            <select id="cameraSelect">
-              <option value="">Seleccionar camara</option>
-            </select>
-            <button class="secondary" id="mirrorBtn">Espejo: Auto</button>
+        <div class="tools panel" id="cameraPanel">
+          <button class="panel-toggle" id="cameraToggle" type="button" aria-expanded="false" aria-controls="cameraPanelBody">
+            <span class="panel-title">Camara</span>
+            <span class="panel-arrow">▾</span>
+          </button>
+          <div class="panel-body" id="cameraPanelBody">
+            <div class="tools-grid">
+              <select id="cameraSelect">
+                <option value="">Seleccionar camara</option>
+              </select>
+              <button class="secondary" id="mirrorBtn">Espejo: Auto</button>
+            </div>
           </div>
         </div>
 
-        <div class="manual">
-          <label for="manualQr">Ingreso manual</label>
-          <div class="manual-row">
-            <input id="manualQr" placeholder="Pegar codigo manual" />
-            <button class="secondary" id="manualBtn">Registrar</button>
+        <div class="manual panel" id="manualPanel">
+          <button class="panel-toggle" id="manualToggle" type="button" aria-expanded="false" aria-controls="manualPanelBody">
+            <span class="panel-title">Ingreso manual</span>
+            <span class="panel-arrow">▾</span>
+          </button>
+          <div class="panel-body" id="manualPanelBody">
+            <div class="manual-row">
+              <input id="manualQr" placeholder="Pegar codigo manual" />
+              <button class="secondary" id="manualBtn">Registrar</button>
+            </div>
+            <div class="tiny">Util si la camara falla o para hacer pruebas rapidas.</div>
           </div>
-          <div class="tiny">Util si la camara falla o para hacer pruebas rapidas.</div>
         </div>
       </div>
     </div>
@@ -357,6 +412,10 @@
       const videoEl = document.getElementById("readerVideo");
       const cameraSelectEl = document.getElementById("cameraSelect");
       const mirrorBtn = document.getElementById("mirrorBtn");
+      const cameraPanelEl = document.getElementById("cameraPanel");
+      const manualPanelEl = document.getElementById("manualPanel");
+      const cameraToggleEl = document.getElementById("cameraToggle");
+      const manualToggleEl = document.getElementById("manualToggle");
 
       function setStatus(message, type = "") {
         statusEl.className = "status";
@@ -412,6 +471,16 @@
       function syncControls() {
         mirrorBtn.textContent = getMirrorModeLabel();
         applyMirrorToPreview();
+      }
+
+      function setPanelOpen(panelEl, toggleEl, open) {
+        panelEl.classList.toggle("is-open", open);
+        toggleEl.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+
+      function togglePanel(panelEl, toggleEl) {
+        const nextOpen = !panelEl.classList.contains("is-open");
+        setPanelOpen(panelEl, toggleEl, nextOpen);
       }
 
       function extractFirstName(res) {
@@ -680,6 +749,7 @@
             selectedCameraId = settings && settings.deviceId ? settings.deviceId : "";
           }
 
+          setPanelOpen(cameraPanelEl, cameraToggleEl, true);
           syncControls();
           startScanLoop();
           setStatus("Escanea el QR de tu tarjeta de membresia", "");
@@ -711,6 +781,14 @@
         syncControls();
       });
 
+      cameraToggleEl.addEventListener("click", () => {
+        togglePanel(cameraPanelEl, cameraToggleEl);
+      });
+
+      manualToggleEl.addEventListener("click", () => {
+        togglePanel(manualPanelEl, manualToggleEl);
+      });
+
       (async function init() {
         try {
           const cameras = await listCameras();
@@ -727,6 +805,8 @@
         }
 
         syncControls();
+        setPanelOpen(cameraPanelEl, cameraToggleEl, false);
+        setPanelOpen(manualPanelEl, manualToggleEl, false);
       })();
     </script>
   </body>
