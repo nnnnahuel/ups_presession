@@ -30,7 +30,7 @@
 
       .card {
         width: 100%;
-        max-width: 1280px;
+        max-width: min(96vw, 1600px);
         background: #18181b;
         border: 1px solid #27272a;
         border-radius: 20px;
@@ -199,16 +199,8 @@
         justify-content: center;
       }
 
-      .camera-notes h2 {
-        margin: 0 0 14px 0;
-        font-size: 28px;
-        line-height: 1;
-        letter-spacing: -0.03em;
-        color: #f4f4f5;
-      }
-
       .camera-notes p {
-        margin: 0 0 12px 0;
+        margin: 0 0 14px 0;
         font-size: 22px;
         line-height: 1.15;
         color: #d4d4d8;
@@ -307,7 +299,6 @@
 
         <div class="camera-layout">
           <aside class="camera-notes">
-            <h2>Notas</h2>
             <p>Si el QR no se toma:</p>
             <ol>
               <li>Baja el brillo de tu celular.</li>
