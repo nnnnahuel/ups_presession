@@ -30,7 +30,7 @@
 
       .card {
         width: 100%;
-        max-width: 760px;
+        max-width: 1280px;
         background: #18181b;
         border: 1px solid #27272a;
         border-radius: 20px;
@@ -106,8 +106,8 @@
 
       .camera-layout {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 240px;
-        gap: 14px;
+        grid-template-columns: 320px minmax(0, 1fr);
+        gap: 18px;
         align-items: stretch;
       }
 
@@ -193,27 +193,39 @@
         border: 1px solid #27272a;
         border-radius: 16px;
         background: #111114;
-        padding: 16px;
+        padding: 22px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
       }
 
       .camera-notes h2 {
-        margin: 0 0 10px 0;
-        font-size: 15px;
+        margin: 0 0 14px 0;
+        font-size: 28px;
+        line-height: 1;
+        letter-spacing: -0.03em;
         color: #f4f4f5;
       }
 
       .camera-notes p {
-        margin: 0 0 8px 0;
-        font-size: 13px;
+        margin: 0 0 12px 0;
+        font-size: 22px;
+        line-height: 1.15;
         color: #d4d4d8;
       }
 
       .camera-notes ol {
         margin: 0;
-        padding-left: 18px;
+        padding-left: 28px;
         color: #f4f4f5;
-        font-size: 14px;
-        line-height: 1.5;
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+      }
+
+      .camera-notes li + li {
+        margin-top: 10px;
       }
 
       .tools-grid {
@@ -294,15 +306,6 @@
         </div>
 
         <div class="camera-layout">
-          <div class="reader-wrap">
-            <div id="reader">
-              <video id="readerVideo" autoplay muted playsinline></video>
-              <div class="overlay">
-                <div class="overlay-box"></div>
-              </div>
-            </div>
-          </div>
-
           <aside class="camera-notes">
             <h2>Notas</h2>
             <p>Si el QR no se toma:</p>
@@ -311,6 +314,15 @@
               <li>Agranda la imagen del QR.</li>
             </ol>
           </aside>
+
+          <div class="reader-wrap">
+            <div id="reader">
+              <video id="readerVideo" autoplay muted playsinline></video>
+              <div class="overlay">
+                <div class="overlay-box"></div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div id="status" class="status">Listo para escanear.</div>
