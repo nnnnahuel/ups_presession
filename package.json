@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "worker": "node worker.cjs"
   },
   "dependencies": {
     "express": "^5.2.1",
