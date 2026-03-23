@@ -676,17 +676,17 @@ export default function App() {
                     <div className="stack">
                       {selectedSessionExerciseGroups.length > 0 ? (
                         selectedSessionExerciseGroups.map(([exercise, athletes]) => (
-                          <div className="exercise-group" key={`history-${exercise}`}>
-                            <div className="exercise-group-head">
+                          <div className="exercise-group compact-exercise-group" key={`history-${exercise}`}>
+                            <div className="exercise-group-head compact-exercise-group-head">
                               <strong>{exercise}</strong>
-                              <span className="group-count">
+                              <span className="group-count compact-group-count">
                                 {athletes.length} atleta{athletes.length === 1 ? "" : "s"}
                               </span>
                             </div>
 
-                            <div className="tag-wrap">
+                            <div className="tag-wrap compact-map-tag-wrap">
                               {athletes.map((athlete) => (
-                                <div className="person-tag" key={`history-map-${athlete.id}`}>
+                                <div className="person-tag compact-map-person-tag" key={`history-map-${athlete.id}`}>
                                   <strong>{athlete.name || "Sin nombre"}</strong>
                                   <span>{statusLabel(athlete.status)}</span>
                                 </div>
@@ -1100,17 +1100,17 @@ export default function App() {
                 <div className="stack">
                   {groupedByExercise.length > 0 ? (
                     groupedByExercise.map(([exercise, athletes]) => (
-                      <div className="exercise-group" key={exercise}>
-                        <div className="exercise-group-head">
+                      <div className="exercise-group compact-exercise-group" key={exercise}>
+                        <div className="exercise-group-head compact-exercise-group-head">
                           <strong>{exercise}</strong>
-                          <span className="group-count">
+                          <span className="group-count compact-group-count">
                             {athletes.length} atleta{athletes.length === 1 ? "" : "s"}
                           </span>
                         </div>
 
-                        <div className="tag-wrap">
+                        <div className="tag-wrap compact-map-tag-wrap">
                           {athletes.map((athlete) => (
-                            <div className="person-tag" key={athlete.id}>
+                            <div className="person-tag compact-map-person-tag" key={athlete.id}>
                               <strong>{athlete.name || "Sin nombre"}</strong>
                               <span>{statusLabel(athlete.status)}</span>
                             </div>

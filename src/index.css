@@ -613,6 +613,47 @@ textarea {
   color: #e4e4e7;
 }
 
+.compact-exercise-group {
+  padding: 10px 11px;
+  border-radius: 12px;
+}
+
+.compact-exercise-group-head {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.compact-exercise-group-head strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.compact-group-count {
+  min-width: 58px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.compact-map-tag-wrap {
+  gap: 6px;
+}
+
+.compact-map-person-tag {
+  gap: 2px;
+  min-width: 112px;
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+
+.compact-map-person-tag strong {
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.compact-map-person-tag span {
+  font-size: 10px;
+}
+
 .exercise-group-head {
   display: flex;
   justify-content: space-between;
@@ -740,6 +781,37 @@ textarea {
   .history-cell-stats span {
     padding: 3px 6px;
     font-size: 11px;
+  }
+
+  .compact-exercise-group {
+    padding: 8px 9px;
+  }
+
+  .compact-exercise-group-head strong {
+    font-size: 13px;
+  }
+
+  .compact-group-count {
+    min-width: 52px;
+    padding: 3px 7px;
+    font-size: 10px;
+  }
+
+  .compact-map-tag-wrap {
+    gap: 5px;
+  }
+
+  .compact-map-person-tag {
+    min-width: 104px;
+    padding: 6px 7px;
+  }
+
+  .compact-map-person-tag strong {
+    font-size: 11px;
+  }
+
+  .compact-map-person-tag span {
+    font-size: 9px;
   }
 
   .field-grid {
