@@ -658,7 +658,7 @@ textarea {
 
 .compact-map-person-tag {
   gap: 2px;
-  min-width: 112px;
+  min-width: 0;
   padding: 7px 8px;
   border-radius: 10px;
 }
@@ -666,10 +666,15 @@ textarea {
 .compact-map-person-tag strong {
   font-size: 12px;
   line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .compact-map-person-tag span {
   font-size: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .visual-map-grid {
@@ -829,7 +834,6 @@ textarea {
   }
 
   .compact-map-person-tag {
-    min-width: 104px;
     padding: 6px 7px;
   }
 
@@ -960,7 +964,6 @@ textarea {
   }
   
   .manual-athlete-list {
-    display: grid;
     gap: 12px;
   }
   
@@ -977,90 +980,10 @@ textarea {
     color: #d4d4d8;
   }
   
-  .mini-icon-btn {
-    height: 42px;
-    width: 42px;
-    border-radius: 10px;
-    border: 1px solid #3f3f46;
-    background: #27272a;
-    color: #f4f4f5;
-    cursor: pointer;
-    font-size: 20px;
-    line-height: 1;
-  }
-  
-  .mini-icon-btn:hover {
-    background: #323238;
-  }
-  
   .add-athlete-row {
     display: flex;
     justify-content: center;
     margin-top: 14px;
-  }
-  
-  .plus-btn {
-    width: 48px;
-    height: 48px;
-    border-radius: 999px;
-    border: 1px solid #3f3f46;
-    background: #27272a;
-    color: #f4f4f5;
-    cursor: pointer;
-    font-size: 28px;
-    line-height: 1;
-  }
-  
-  .plus-btn:hover {
-    background: #323238;
-  }
-  
-  @media (max-width: 640px) {
-    .visual-map-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .athlete-form-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .mobile-map-preview {
-      top: 8px;
-    }
-
-    .manual-athlete-row {
-      grid-template-columns: 1fr;
-    }
-  
-    .mini-icon-btn {
-      width: 100%;
-    }
-  }
-
-  .step-top-actions {
-    margin-bottom: 12px;
-    display: flex;
-    justify-content: flex-start;
-  }
-  
-  .manual-athletes-block {
-    margin-top: 20px;
-  }
-  
-  .manual-athlete-list {
-    display: grid;
-    gap: 14px;
-  }
-  
-  .manual-athlete-row {
-    display: grid;
-    gap: 8px;
-  }
-  
-  .manual-athlete-label {
-    margin: 0;
-    font-size: 14px;
-    color: #d4d4d8;
   }
   
   .manual-athlete-input-wrap {
@@ -1121,6 +1044,25 @@ textarea {
   .add-athlete-plus {
     font-size: 22px;
     line-height: 1;
+  }
+
+  @media (max-width: 640px) {
+    .visual-map-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .athlete-form-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .mobile-map-preview {
+      top: 8px;
+    }
+
+    .manual-athlete-row {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
   }
 
   .reader-wrap {
