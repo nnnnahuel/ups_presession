@@ -816,36 +816,6 @@ export default function App() {
           <section className="card centered-card">
             <h2>Sesión</h2>
 
-            <div className="field-grid">
-              <div>
-                <label>Hora</label>
-                <select
-                  value={state.sessionTime}
-                  onChange={(e) =>
-                    setState((prev) => ({ ...prev, sessionTime: e.target.value }))
-                  }
-                >
-                  <option value="">Seleccionar turno</option>
-                  {TURN_TIMES.map((time) => (
-                    <option key={time} value={time}>
-                      {time}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label>Coach</label>
-                <input
-                  value={state.coachName}
-                  onChange={(e) =>
-                    setState((prev) => ({ ...prev, coachName: e.target.value }))
-                  }
-                  placeholder="Coach"
-                />
-              </div>
-            </div>
-
             <div>
               <label>Movimientos del día</label>
               <div className="preset-picker">
@@ -911,6 +881,36 @@ export default function App() {
                   <div className="small-label">
                     Cargá primero todos los atletas de la sesión.
                   </div>
+                </div>
+              </div>
+
+              <div className="field-grid compact-session-fields">
+                <div>
+                  <label>Hora</label>
+                  <select
+                    value={state.sessionTime}
+                    onChange={(e) =>
+                      setState((prev) => ({ ...prev, sessionTime: e.target.value }))
+                    }
+                  >
+                    <option value="">Seleccionar turno</option>
+                    {TURN_TIMES.map((time) => (
+                      <option key={time} value={time}>
+                        {time}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label>Coach</label>
+                  <input
+                    value={state.coachName}
+                    onChange={(e) =>
+                      setState((prev) => ({ ...prev, coachName: e.target.value }))
+                    }
+                    placeholder="Coach"
+                  />
                 </div>
               </div>
 
