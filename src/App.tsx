@@ -24,6 +24,12 @@ type AttentionItem = {
   step: string;
 };
 
+type AttentionBucket = {
+  id: "expectations" | "targets";
+  title: string;
+  items: AttentionItem[];
+};
+
 type SavedSession = {
   id: string;
   createdAt: string;
@@ -82,13 +88,27 @@ const TURN_TIMES = Array.from({ length: 16 }, (_, index) => {
   return `${String(hour).padStart(2, "0")}:00`;
 });
 
-function createEmptyState(): SessionState {
+function getPresetForDate(date = new Date()): MovementPresetId | null {
+  const day = date.getDay();
+
+  if (day >= 1 && day <= 5) {
+    return `M${day}` as MovementPresetId;
+  }
+
+  return null;
+}
+
+function createSessionStateFromPreset(presetId: MovementPresetId | null): SessionState {
   return {
     sessionTime: "",
     coachName: "",
-    movementsText: "",
-    athletes: [],
+    movementsText: presetId ? MOVEMENT_PRESETS[presetId].join("\n") : "",
+    athletes: presetId ? [createAthlete()] : [],
   };
+}
+
+function createEmptyState(): SessionState {
+  return createSessionStateFromPreset(getPresetForDate());
 }
 
 function createAthlete(name = ""): Athlete {
@@ -103,13 +123,6 @@ function createAthlete(name = ""): Athlete {
 
 function statusLabel(status: AthleteStatus) {
   return status === "autonomo" ? "Inicio Autónomo" : "Inicio Guiado";
-}
-
-function attentionStepClass(step: string) {
-  if (step === "Dar expectativas") return "order-tag-expectations";
-  if (step === "Targets & Aprox.") return "order-tag-targets";
-  if (step === "Volver a guiado") return "order-tag-return";
-  return "";
 }
 
 function formatSavedAt(value: string) {
@@ -221,30 +234,32 @@ async function createSharedSession(session: SavedSession): Promise<boolean> {
   }
 }
 
-function buildAttentionOrder(athletes: Athlete[]): AttentionItem[] {
+function buildAttentionBuckets(athletes: Athlete[]): AttentionBucket[] {
   const activeAthletes = athletes.filter((athlete) => athlete.name.trim() !== "");
   const guided = activeAthletes.filter((athlete) => athlete.status === "guiado");
   const autonomous = activeAthletes.filter((athlete) => athlete.status === "autonomo");
 
   return [
-    ...guided.map((athlete) => ({
-      athleteId: athlete.id,
-      athleteName: athlete.name,
-      startExercise: athlete.startExercise,
-      step: "Dar expectativas",
-    })),
-    ...autonomous.map((athlete) => ({
-      athleteId: athlete.id,
-      athleteName: athlete.name,
-      startExercise: athlete.startExercise,
-      step: "Targets & Aprox.",
-    })),
-    ...guided.map((athlete) => ({
-      athleteId: athlete.id,
-      athleteName: athlete.name,
-      startExercise: athlete.startExercise,
-      step: "Volver a guiado",
-    })),
+    {
+      id: "expectations",
+      title: "Dar expectativas",
+      items: guided.map((athlete) => ({
+        athleteId: athlete.id,
+        athleteName: athlete.name,
+        startExercise: athlete.startExercise,
+        step: "Dar expectativas",
+      })),
+    },
+    {
+      id: "targets",
+      title: "Dar targets",
+      items: autonomous.map((athlete) => ({
+        athleteId: athlete.id,
+        athleteName: athlete.name,
+        startExercise: athlete.startExercise,
+        step: "Dar targets",
+      })),
+    },
   ];
 }
 
@@ -294,11 +309,27 @@ function detectMovementPreset(movements: string[]): MovementPresetId | null {
   return (match?.[0] as MovementPresetId | undefined) ?? null;
 }
 
+function getInitialStep(state: SessionState): 1 | 2 | 3 {
+  const hasMovements = state.movementsText.trim() !== "";
+  const hasNamedAthletes = state.athletes.some((athlete) => athlete.name.trim() !== "");
+
+  if (!hasMovements) return 1;
+  if (!hasNamedAthletes) return 2;
+  return 3;
+}
+
 export default function App() {
   const [state, setState] = useState<SessionState>(createEmptyState);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(() => getInitialStep(createEmptyState()));
   const [viewMode, setViewMode] = useState<ViewMode>("board");
-  const [selectedPreset, setSelectedPreset] = useState<MovementPresetId | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<MovementPresetId | null>(() =>
+    detectMovementPreset(
+      createEmptyState()
+        .movementsText.split("\n")
+        .map((movement) => movement.trim())
+        .filter(Boolean)
+    )
+  );
   const [hydrated, setHydrated] = useState(false);
   const [collapsedAthletes, setCollapsedAthletes] = useState<Record<string, boolean>>({});
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
@@ -314,6 +345,15 @@ export default function App() {
 
     if (loaded) {
       setState(loaded);
+      setSelectedPreset(
+        detectMovementPreset(
+          loaded.movementsText
+            .split("\n")
+            .map((movement) => movement.trim())
+            .filter(Boolean)
+        )
+      );
+      setStep(getInitialStep(loaded));
     }
 
     setSavedSessions(history);
@@ -374,9 +414,13 @@ export default function App() {
 
   const namedAthletesCount = namedAthletes.length;
 
-  const attentionOrder = useMemo(() => {
-    return buildAttentionOrder(state.athletes);
+  const attentionBuckets = useMemo(() => {
+    return buildAttentionBuckets(state.athletes);
   }, [state.athletes]);
+
+  const attentionItems = useMemo(() => {
+    return attentionBuckets.flatMap((bucket) => bucket.items);
+  }, [attentionBuckets]);
 
   const groupedByExercise = useMemo(() => {
     return buildExerciseGroups(namedAthletes, movementList);
@@ -389,6 +433,11 @@ export default function App() {
   const selectedSessionExerciseGroups = useMemo(() => {
     if (!selectedSession) return [];
     return buildExerciseGroups(selectedSession.athletes, selectedSession.movements);
+  }, [selectedSession]);
+
+  const selectedSessionAttentionBuckets = useMemo(() => {
+    if (!selectedSession) return [];
+    return buildAttentionBuckets(selectedSession.athletes);
   }, [selectedSession]);
 
   const selectedSessionPreset = useMemo(() => {
@@ -466,10 +515,18 @@ export default function App() {
 
   function resetAll() {
     localStorage.removeItem(STORAGE_KEY);
-    setState(createEmptyState());
-    setSelectedPreset(null);
+    const nextState = createEmptyState();
+    setState(nextState);
+    setSelectedPreset(
+      detectMovementPreset(
+        nextState.movementsText
+          .split("\n")
+          .map((movement) => movement.trim())
+          .filter(Boolean)
+      )
+    );
     setCollapsedAthletes({});
-    setStep(1);
+    setStep(getInitialStep(nextState));
   }
 
   function buildSessionSnapshot(): SavedSession {
@@ -480,7 +537,7 @@ export default function App() {
       coachName: state.coachName,
       movements: movementList,
       athletes: namedAthletes.map((athlete) => ({ ...athlete })),
-      attentionOrder,
+      attentionOrder: attentionItems,
     };
   }
 
@@ -512,16 +569,24 @@ export default function App() {
 
     setViewMode("board");
     localStorage.removeItem(STORAGE_KEY);
-    setState(createEmptyState());
-    setSelectedPreset(null);
+    const nextState = createEmptyState();
+    setState(nextState);
+    setSelectedPreset(
+      detectMovementPreset(
+        nextState.movementsText
+          .split("\n")
+          .map((movement) => movement.trim())
+          .filter(Boolean)
+      )
+    );
     setCollapsedAthletes({});
-    setStep(1);
+    setStep(getInitialStep(nextState));
     setIsSavingSession(false);
   }
 
   const canGoToAthletes = movementList.length > 0;
   const canGoToOrganization = namedAthletesCount > 0;
-  const canSaveSession = namedAthletesCount > 0 && attentionOrder.length > 0;
+  const canSaveSession = namedAthletesCount > 0;
 
   return (
     <div className="app-shell">
@@ -631,7 +696,7 @@ export default function App() {
                         <div className="history-cell history-cell-stats">
                           <span>{session.athletes.length} A</span>
                           <span>{detectMovementPreset(session.movements) || "-"}</span>
-                          <span>{session.attentionOrder.length} P</span>
+                          <span>{buildAttentionBuckets(session.athletes).flatMap((bucket) => bucket.items).length} P</span>
                         </div>
                       </button>
                     ))}
@@ -703,22 +768,40 @@ export default function App() {
                   </div>
 
                   <div className="history-detail-section">
-                    <div className="small-label">Orden de atención</div>
+                    <div className="small-label">Pendientes</div>
                     <div className="stack">
-                      {selectedSession.attentionOrder.map((item, index) => (
-                        <div
-                          className="order-item order-timeline-item"
-                          key={`${item.athleteId}-${item.step}-${index}-history`}
-                        >
-                          <div className="order-step-badge">{index + 1}</div>
-                          <div className="order-content">
-                            <div className="order-main">{item.athleteName || "Sin nombre"}</div>
+                      {selectedSessionAttentionBuckets.some((bucket) => bucket.items.length > 0) ? (
+                        selectedSessionAttentionBuckets.map((bucket) => (
+                          <div className="exercise-group compact-exercise-group" key={`history-${bucket.id}`}>
+                            <div className="exercise-group-head compact-exercise-group-head">
+                              <strong className="compact-exercise-title">{bucket.title}</strong>
+                              <span className="group-count compact-group-count">
+                                {bucket.items.length}
+                              </span>
+                            </div>
+
+                            {bucket.items.length > 0 ? (
+                              <div className="tag-wrap compact-map-tag-wrap">
+                                {bucket.items.map((item) => (
+                                  <div
+                                    className="person-tag compact-map-person-tag"
+                                    key={`history-attention-${bucket.id}-${item.athleteId}`}
+                                  >
+                                    <strong>{item.athleteName || "Sin nombre"}</strong>
+                                    <span>{item.startExercise || "Sin ejercicio asignado"}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="small-label">Sin atletas pendientes</div>
+                            )}
                           </div>
-                          <div className={`order-tag ${attentionStepClass(item.step)}`}>
-                            {item.step}
-                          </div>
+                        ))
+                      ) : (
+                        <div className="order-item">
+                          <div className="order-main">No hay pendientes de atención</div>
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 </>
@@ -1127,30 +1210,39 @@ export default function App() {
               </section>
 
               <section className="card">
-                <h2>Orden de atención</h2>
+                <h2>Pendientes</h2>
 
                 <div className="stack">
-                  {attentionOrder.length > 0 ? (
-                    attentionOrder.map((item, index) => (
-                      <div
-                        className="order-item order-timeline-item"
-                        key={`${item.athleteId}-${item.step}-${index}`}
-                      >
-                        <div className="order-step-badge">{index + 1}</div>
-                        <div className="order-content">
-                          <div className="order-main">{item.athleteName || "Sin nombre"}</div>
-                          <div className="order-sub">
-                            {item.startExercise || "Sin ejercicio asignado"}
+                  {attentionBuckets.some((bucket) => bucket.items.length > 0) ? (
+                    attentionBuckets.map((bucket) => (
+                      <div className="exercise-group compact-exercise-group" key={bucket.id}>
+                        <div className="exercise-group-head compact-exercise-group-head">
+                          <strong className="compact-exercise-title">{bucket.title}</strong>
+                          <span className="group-count compact-group-count">
+                            {bucket.items.length}
+                          </span>
+                        </div>
+
+                        {bucket.items.length > 0 ? (
+                          <div className="tag-wrap compact-map-tag-wrap">
+                            {bucket.items.map((item) => (
+                              <div
+                                className="person-tag compact-map-person-tag"
+                                key={`${bucket.id}-${item.athleteId}`}
+                              >
+                                <strong>{item.athleteName || "Sin nombre"}</strong>
+                                <span>{item.startExercise || "Sin ejercicio asignado"}</span>
+                              </div>
+                            ))}
                           </div>
-                        </div>
-                        <div className={`order-tag ${attentionStepClass(item.step)}`}>
-                          {item.step}
-                        </div>
+                        ) : (
+                          <div className="small-label">Sin atletas pendientes</div>
+                        )}
                       </div>
                     ))
                   ) : (
                     <div className="order-item">
-                      <div className="order-main">Todavía no hay orden generado</div>
+                      <div className="order-main">Todavía no hay pendientes</div>
                     </div>
                   )}
                 </div>
