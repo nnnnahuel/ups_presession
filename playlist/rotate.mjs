@@ -127,7 +127,14 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
     if (!dryRun) {
       if (selection.toRemove.length) {
         const removedUris = selection.toRemove.map((item) => item.track.uri);
-        await spotify.addToPlaylist(config.ARCHIVE_PLAYLIST_ID, removedUris);
+        const archiveInsertUris = removedUris.filter((uri) => !archiveUris.has(uri));
+
+        result.details.archiveInsertCount = archiveInsertUris.length;
+
+        if (archiveInsertUris.length) {
+          await spotify.addToPlaylist(config.ARCHIVE_PLAYLIST_ID, archiveInsertUris);
+        }
+
         await spotify.removeFromPlaylist(config.MAIN_PLAYLIST_ID, removedUris);
         await recordRemovedTracks(pool, selection.toRemove);
         result.removed = removedUris.length;
