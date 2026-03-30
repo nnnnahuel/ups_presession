@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server.mjs",
-    "worker": "node worker.cjs"
+    "worker": "node worker.cjs",
+    "playlist:rotate": "node scripts/run-playlist-rotate.mjs",
+    "playlist:token": "node scripts/get-spotify-token.mjs"
   },
   "dependencies": {
     "express": "^5.2.1",

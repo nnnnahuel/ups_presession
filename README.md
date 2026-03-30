@@ -1,4 +1,40 @@
-# React + TypeScript + Vite
+# UPS Session Prep Board
+
+## Playlist rotation
+
+The backend now includes a Spotify playlist rotation agent for Railway.
+
+Required environment variables:
+
+- `DATABASE_URL`
+- `SPOTIFY_CLIENT_ID`
+- `SPOTIFY_CLIENT_SECRET`
+- `SPOTIFY_REFRESH_TOKEN`
+- `LASTFM_API_KEY`
+- `SPOTIFY_MAIN_PLAYLIST_ID`
+- `SPOTIFY_ARCHIVE_PLAYLIST_ID`
+- `PLAYLIST_API_TOKEN`
+
+Optional tuning:
+
+- `PLAYLIST_ROTATION_COUNT` default `10`
+- `PLAYLIST_MIN_PLAYLIST_SIZE` default `40`
+- `PLAYLIST_COOLDOWN_DAYS` default `45`
+- `PLAYLIST_EXPLICIT_PENALTY` default `0.3`
+- `PLAYLIST_TRACK_SIMILAR_BONUS` default `1.2`
+- `PLAYLIST_LASTFM_SIMILAR_TRACKS_LIMIT` default `15`
+- `PLAYLIST_LASTFM_SIMILAR_ARTISTS_LIMIT` default `10`
+- `PLAYLIST_SPOTIFY_SEARCH_LIMIT` default `10`
+
+Operational entry points:
+
+- `POST /api/playlist/rotate`
+- `GET /api/playlist/logs`
+- `npm run playlist:rotate`
+- `npm run playlist:token`
+
+For Railway Cron, call `POST /api/playlist/rotate` with `Authorization: Bearer <PLAYLIST_API_TOKEN>`.
+For local Spotify OAuth, register `http://127.0.0.1:8888/callback` as the redirect URI.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

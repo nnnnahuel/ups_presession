@@ -3,6 +3,8 @@ import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
+import { getRecentLogs, initPlaylistTables } from "./playlist/state.mjs";
+import { runPlaylistRotation } from "./playlist/rotate.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +19,7 @@ const ELEVEN_STYLE = Number(process.env.ELEVEN_STYLE ?? 0.3);
 const ELEVEN_SPEAKER_BOOST =
   String(process.env.ELEVEN_SPEAKER_BOOST ?? "false").toLowerCase() !== "false";
 const WORKER_TOKEN = process.env.WORKER_TOKEN || "";
+const PLAYLIST_API_TOKEN = process.env.PLAYLIST_API_TOKEN || "";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 const ttsCache = new Map();
@@ -55,6 +58,8 @@ async function initDb() {
       payload JSONB NOT NULL
     )
   `);
+
+  await initPlaylistTables(pool);
 }
 
 const app = express();
@@ -78,6 +83,33 @@ function requireWorkerAuth(req, res, next) {
 
   if (token !== WORKER_TOKEN) {
     res.status(401).json({ error: "unauthorized_worker" });
+    return;
+  }
+
+  next();
+}
+
+function requirePlaylistAuth(req, res, next) {
+  if (!PLAYLIST_API_TOKEN) {
+    if (process.env.NODE_ENV === "production") {
+      res.status(503).json({ error: "playlist_token_not_configured" });
+      return;
+    }
+
+    next();
+    return;
+  }
+
+  const authorization = req.headers.authorization;
+  const bearer =
+    typeof authorization === "string"
+      ? authorization.replace(/^Bearer\s+/i, "").trim()
+      : "";
+  const headerToken = req.headers["x-playlist-token"];
+  const token = bearer || headerToken;
+
+  if (token !== PLAYLIST_API_TOKEN) {
+    res.status(401).json({ error: "unauthorized_playlist" });
     return;
   }
 
@@ -174,6 +206,43 @@ app.post("/api/sessions", async (req, res) => {
     res.status(201).json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: "FAILED_TO_SAVE_SESSION", detail: String(error) });
+  }
+});
+
+app.get("/api/playlist/logs", requirePlaylistAuth, async (req, res) => {
+  if (!pool) {
+    res.status(503).json({ error: "DATABASE_NOT_CONFIGURED" });
+    return;
+  }
+
+  const limit = Math.max(1, Math.min(100, Number.parseInt(req.query.limit, 10) || 30));
+
+  try {
+    const logs = await getRecentLogs(pool, limit);
+    res.json(logs);
+  } catch (error) {
+    res.status(500).json({ error: "FAILED_TO_LIST_PLAYLIST_LOGS", detail: String(error) });
+  }
+});
+
+app.post("/api/playlist/rotate", requirePlaylistAuth, async (req, res) => {
+  if (!pool) {
+    res.status(503).json({ error: "DATABASE_NOT_CONFIGURED" });
+    return;
+  }
+
+  try {
+    const dryRun = req.body?.dryRun === true || req.query.dryRun === "true";
+    const result = await runPlaylistRotation({ pool, dryRun });
+
+    if (result.errors?.includes("rotation_already_running")) {
+      res.status(409).json(result);
+      return;
+    }
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: "PLAYLIST_ROTATION_FAILED", detail: String(error) });
   }
 });
 
