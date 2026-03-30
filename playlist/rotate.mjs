@@ -122,6 +122,7 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
     result.details.addedCandidates = replacementResult.tracks.map(formatTrack);
     result.details.cooldownCount = cooldownUris.size;
     result.details.replacementCount = replacementResult.tracks.length;
+    result.details.replacementUris = replacementResult.tracks.map((track) => track.uri || null);
 
     if (!dryRun) {
       if (selection.toRemove.length) {
@@ -133,11 +134,18 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
       }
 
       if (replacementResult.tracks.length) {
-        await spotify.addToPlaylist(
-          config.MAIN_PLAYLIST_ID,
-          replacementResult.tracks.map((track) => track.uri)
-        );
-        result.added = replacementResult.tracks.length;
+        const replacementUris = replacementResult.tracks
+          .map((track) => track.uri)
+          .filter((uri) => typeof uri === "string" && uri.startsWith("spotify:track:"));
+
+        result.details.validReplacementUriCount = replacementUris.length;
+
+        if (!replacementUris.length) {
+          throw new Error("No valid Spotify track URIs found for replacements.");
+        }
+
+        await spotify.addToPlaylist(config.MAIN_PLAYLIST_ID, replacementUris);
+        result.added = replacementUris.length;
       }
     } else {
       result.removed = selection.toRemove.length;

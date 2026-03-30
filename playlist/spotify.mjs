@@ -69,23 +69,27 @@ export class SpotifyClient {
   }
 
   async addToPlaylist(playlistId, uris) {
-    if (!uris.length) {
+    const validUris = sanitizeUris(uris);
+
+    if (!validUris.length) {
       return;
     }
 
-    for (let index = 0; index < uris.length; index += 100) {
-      const batch = uris.slice(index, index + 100);
+    for (let index = 0; index < validUris.length; index += 100) {
+      const batch = validUris.slice(index, index + 100);
       await this.#post(`/playlists/${playlistId}/items`, { uris: batch });
     }
   }
 
   async removeFromPlaylist(playlistId, uris) {
-    if (!uris.length) {
+    const validUris = sanitizeUris(uris);
+
+    if (!validUris.length) {
       return;
     }
 
-    for (let index = 0; index < uris.length; index += 100) {
-      const batch = uris.slice(index, index + 100);
+    for (let index = 0; index < validUris.length; index += 100) {
+      const batch = validUris.slice(index, index + 100);
       await this.#delete(`/playlists/${playlistId}/items`, {
         tracks: batch.map((uri) => ({ uri })),
       });
@@ -177,4 +181,12 @@ export class SpotifyClient {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sanitizeUris(uris) {
+  return [...new Set((Array.isArray(uris) ? uris : []).filter(isSpotifyTrackUri))];
+}
+
+function isSpotifyTrackUri(value) {
+  return typeof value === "string" && /^spotify:track:[A-Za-z0-9]+$/.test(value);
 }
