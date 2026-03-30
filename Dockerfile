@@ -17,6 +17,7 @@ RUN npm ci --omit=dev
 
 COPY server.mjs ./server.mjs
 COPY playlist ./playlist
+COPY scripts ./scripts
 COPY --from=build /app/dist ./dist
 
 EXPOSE 3000
