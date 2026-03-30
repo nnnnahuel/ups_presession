@@ -91,7 +91,7 @@ export class SpotifyClient {
     for (let index = 0; index < validUris.length; index += 100) {
       const batch = validUris.slice(index, index + 100);
       await this.#delete(`/playlists/${playlistId}/items`, {
-        tracks: batch.map((uri) => ({ uri })),
+        items: batch.map((uri) => ({ uri })),
       });
     }
   }
