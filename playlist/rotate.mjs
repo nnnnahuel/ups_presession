@@ -89,6 +89,10 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
 
     const currentUris = new Set(playlistItems.map((item) => item.track.uri));
     const archiveUris = new Set(archiveItems.map((item) => item.track.uri));
+    const excludeTrackKeys = new Set([
+      ...playlistItems.map((item) => buildTrackKey(item.track.name, item.track.artists[0]?.name)),
+      ...archiveItems.map((item) => buildTrackKey(item.track.name, item.track.artists[0]?.name)),
+    ]);
 
     await purgeOldHistory(pool, config.COOLDOWN_DAYS);
     const cooldownUris = await getCooldownUris(pool, config.COOLDOWN_DAYS);
@@ -113,6 +117,7 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
       seedTracks,
       seedArtists,
       excludeUris,
+      excludeTrackKeys,
       count: targetAddCount,
       config,
     });
@@ -244,4 +249,37 @@ function formatTrack(track) {
     score: track.score,
     explicit: Boolean(track.explicit),
   };
+}
+
+function buildTrackKey(name, artist) {
+  return `${normalizeArtist(artist)}::${normalizeTrackName(name)}`;
+}
+
+function normalizeArtist(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeTrackName(value) {
+  let normalized = String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  normalized = normalized.replace(/\[[^\]]*\]/g, " ");
+  normalized = normalized.replace(/\(([^)]*)\)/g, (match, inner) => {
+    return /\b(remix|mix|edit|version|live|extended|club|dub|remaster|acoustic|instrumental|vip)\b/i.test(
+      inner
+    )
+      ? " "
+      : match;
+  });
+  normalized = normalized.replace(/\s+-\s+(radio edit|remix|mix|edit|version|live|extended.*|club.*|dub.*|remaster.*)$/i, " ");
+  normalized = normalized.replace(/[^a-z0-9]+/g, " ");
+
+  return normalized.trim();
 }

@@ -4,6 +4,7 @@ export async function findReplacements({
   seedTracks,
   seedArtists,
   excludeUris,
+  excludeTrackKeys,
   count,
   config,
 }) {
@@ -32,6 +33,7 @@ export async function findReplacements({
   let scored = scoreAndFilter({
     tracks: materialized,
     excludeUris,
+    excludeTrackKeys,
     explicitPenalty: EXPLICIT_PENALTY,
     trackSimilarBonus: TRACK_SIMILAR_BONUS,
   });
@@ -44,6 +46,10 @@ export async function findReplacements({
       lastfm,
       candidates,
       excludeUris: new Set([...excludeUris, ...scored.map((track) => track.uri)]),
+      excludeTrackKeys: new Set([
+        ...excludeTrackKeys,
+        ...scored.map((track) => buildTrackKey(track.name, track.artist)),
+      ]),
       needed: count - scored.length,
       explicitPenalty: EXPLICIT_PENALTY,
     });
@@ -134,19 +140,35 @@ async function materializeOnSpotify({ spotify, candidates, searchLimit }) {
   return results;
 }
 
-function scoreAndFilter({ tracks, excludeUris, explicitPenalty, trackSimilarBonus }) {
+function scoreAndFilter({
+  tracks,
+  excludeUris,
+  excludeTrackKeys,
+  explicitPenalty,
+  trackSimilarBonus,
+}) {
   const seenUris = new Set();
+  const seenTrackKeys = new Set();
   const scored = [];
 
   for (const track of tracks) {
-    if (excludeUris.has(track.uri) || seenUris.has(track.uri)) {
+    const trackKey = buildTrackKey(track.name, track.artist);
+
+    if (
+      excludeUris.has(track.uri) ||
+      seenUris.has(track.uri) ||
+      excludeTrackKeys.has(trackKey) ||
+      seenTrackKeys.has(trackKey)
+    ) {
       continue;
     }
 
     seenUris.add(track.uri);
+    seenTrackKeys.add(trackKey);
 
     const sourceBonus = track.candidateSource === "track" ? trackSimilarBonus : 1;
     const explicitMultiplier = track.explicit ? explicitPenalty : 1;
+    const versionPenalty = isVariantTrackName(track.name) ? 0.65 : 1;
     const jitter = 0.9 + Math.random() * 0.2;
 
     scored.push({
@@ -154,7 +176,7 @@ function scoreAndFilter({ tracks, excludeUris, explicitPenalty, trackSimilarBonu
       name: track.name,
       artist: track.artist,
       explicit: track.explicit,
-      score: track.matchScore * sourceBonus * explicitMultiplier * jitter,
+      score: track.matchScore * sourceBonus * explicitMultiplier * versionPenalty * jitter,
     });
   }
 
@@ -162,8 +184,17 @@ function scoreAndFilter({ tracks, excludeUris, explicitPenalty, trackSimilarBonu
   return scored;
 }
 
-async function tryFallbacks({ spotify, lastfm, candidates, excludeUris, needed, explicitPenalty }) {
+async function tryFallbacks({
+  spotify,
+  lastfm,
+  candidates,
+  excludeUris,
+  excludeTrackKeys,
+  needed,
+  explicitPenalty,
+}) {
   const fallbackTracks = [];
+  const seenTrackKeys = new Set(excludeTrackKeys);
   const topArtistCandidates = candidates
     .filter((candidate) => candidate.source === "artist")
     .sort((left, right) => right.match - left.match)
@@ -182,10 +213,17 @@ async function tryFallbacks({ spotify, lastfm, candidates, excludeUris, needed, 
 
       const tracks = await spotify.searchTracks(`artist:${similarArtist.name}`, 10, 1);
       for (const track of tracks) {
-        if (excludeUris.has(track.uri) || fallbackTracks.some((item) => item.uri === track.uri)) {
+        const trackKey = buildTrackKey(track.name, track.artists?.[0]?.name || "Unknown");
+
+        if (
+          excludeUris.has(track.uri) ||
+          fallbackTracks.some((item) => item.uri === track.uri) ||
+          seenTrackKeys.has(trackKey)
+        ) {
           continue;
         }
 
+        seenTrackKeys.add(trackKey);
         fallbackTracks.push({
           uri: track.uri,
           name: track.name,
@@ -209,10 +247,17 @@ async function tryFallbacks({ spotify, lastfm, candidates, excludeUris, needed, 
           break;
         }
 
-        if (excludeUris.has(track.uri) || fallbackTracks.some((item) => item.uri === track.uri)) {
+        const trackKey = buildTrackKey(track.name, track.artists?.[0]?.name || "Unknown");
+
+        if (
+          excludeUris.has(track.uri) ||
+          fallbackTracks.some((item) => item.uri === track.uri) ||
+          seenTrackKeys.has(trackKey)
+        ) {
           continue;
         }
 
+        seenTrackKeys.add(trackKey);
         fallbackTracks.push({
           uri: track.uri,
           name: track.name,
@@ -241,4 +286,39 @@ function deduplicateCandidates(candidates) {
   }
 
   return [...deduped.values()];
+}
+
+function buildTrackKey(name, artist) {
+  return `${normalizeArtist(artist)}::${normalizeTrackName(name)}`;
+}
+
+function normalizeArtist(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeTrackName(value) {
+  let normalized = String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  normalized = normalized.replace(/\[[^\]]*\]/g, " ");
+  normalized = normalized.replace(/\(([^)]*)\)/g, (match, inner) => {
+    return isVariantTrackName(inner) ? " " : match;
+  });
+  normalized = normalized.replace(/\s+-\s+(radio edit|remix|mix|edit|version|live|extended.*|club.*|dub.*|remaster.*)$/i, " ");
+  normalized = normalized.replace(/[^a-z0-9]+/g, " ");
+
+  return normalized.trim();
+}
+
+function isVariantTrackName(value) {
+  return /\b(remix|mix|edit|version|live|extended|club|dub|remaster|acoustic|instrumental|vip)\b/i.test(
+    String(value || "")
+  );
 }
