@@ -704,7 +704,7 @@
           const athleteName = String(profiles[0]?.full_name || "").trim();
           const todayIso = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
           const duplicateResponse = await fetch(
-            `${SUPABASE_URL}/rest/v1/attendance_events?qr_code=eq.${encodeURIComponent(cleaned)}&checked_in_at=gte.${todayIso}&select=id`,
+            `${SUPABASE_URL}/rest/v1/attendance_events?qr_code=eq.${encodeURIComponent(cleaned)}&checked_in_at=gte.${todayIso}&source=eq.qr_scanner&select=id`,
             { headers }
           );
           if (!duplicateResponse.ok) {
