@@ -308,23 +308,77 @@
       }
 
       @media (max-width: 640px) {
+        body {
+          background: #000;
+        }
+
+        .page {
+          padding: 0;
+        }
+
+        .card {
+          min-height: 100vh;
+          padding: 0;
+          border: 0;
+          border-radius: 0;
+          background: #000;
+          box-shadow: none;
+        }
+
+        .eyebrow,
+        h1,
+        .actions,
+        .camera-notes,
+        #cameraPanel,
+        #manualPanel {
+          display: none;
+        }
+
         .camera-layout,
         .manual-row,
         .tools-grid {
           grid-template-columns: 1fr;
         }
 
+        .camera-layout {
+          display: block;
+          gap: 0;
+        }
+
         h1 {
           font-size: 28px;
         }
 
+        .reader-wrap {
+          padding: 0;
+          border: 0;
+          border-radius: 0;
+          background: #000;
+        }
+
+        #reader {
+          min-height: 100vh;
+          aspect-ratio: auto;
+          border-radius: 0;
+        }
+
         .status {
-          min-height: 130px;
-          font-size: clamp(24px, 8vw, 40px);
+          position: fixed;
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          margin-top: 0;
+          min-height: auto;
+          padding: 14px 16px;
+          border-radius: 16px;
+          font-size: clamp(18px, 5vw, 28px);
+          z-index: 10;
+          background: rgba(9, 9, 11, 0.78);
+          backdrop-filter: blur(10px);
         }
 
         .overlay-box {
-          width: min(68vw, 250px);
+          width: min(72vw, 300px);
         }
       }
     </style>
@@ -392,7 +446,6 @@
     </div>
 
     <script>
-      const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbytLPt2OIOJwhtbNISzjnxzcbtLfSMfR7PgLg7HgZEarzFOriYNyCLKUuk2QHESQ-uxJQ/exec";
       const SUPABASE_URL = "https://sfwmeifxvangpwrrycda.supabase.co";
       const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmd21laWZ4dmFuZ3B3cnJ5Y2RhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3MDk5MDksImV4cCI6MjA4NDI4NTkwOX0.Yw0nCjoErcJojKKIbDxkBT985oY1YiP4IugO2qDMd-A";
 
@@ -400,7 +453,6 @@
       let isSaving = false;
       let cooldownUntil = 0;
       let lastText = "";
-      let activeJsonpScript = null;
       let scanLoopId = 0;
       let selectedCameraId = "";
       let mirrorMode = "auto";
@@ -418,6 +470,7 @@
       const manualPanelEl = document.getElementById("manualPanel");
       const cameraToggleEl = document.getElementById("cameraToggle");
       const manualToggleEl = document.getElementById("manualToggle");
+      const isPhoneLayout = window.matchMedia("(max-width: 640px)");
 
       function setStatus(message, type = "") {
         statusEl.className = "status";
@@ -511,67 +564,6 @@
           return "Hola " + firstName + " " + "\u{1F5A4}";
         }
         return fallback;
-      }
-
-      function logAttendance(qrCode, athleteName) {
-        fetch(SUPABASE_URL + "/rest/v1/attendance_events", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: "Bearer " + SUPABASE_ANON_KEY,
-            Prefer: "return=minimal"
-          },
-          body: JSON.stringify({
-            qr_code: qrCode,
-            athlete_name: athleteName,
-            checked_in_at: new Date().toISOString(),
-            source: "qr_scanner"
-          })
-        }).catch(() => {});
-      }
-
-      function jsonp(url) {
-        return new Promise((resolve, reject) => {
-          const callbackName = "upsCheckinCallback_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
-
-          window[callbackName] = function (data) {
-            cleanup();
-            resolve(data);
-          };
-
-          function cleanup() {
-            if (activeJsonpScript && activeJsonpScript.parentNode) {
-              activeJsonpScript.parentNode.removeChild(activeJsonpScript);
-            }
-            activeJsonpScript = null;
-            try {
-              delete window[callbackName];
-            } catch (_) {
-              window[callbackName] = undefined;
-            }
-          }
-
-          const script = document.createElement("script");
-          const separator = url.includes("?") ? "&" : "?";
-          script.src = `${url}${separator}callback=${callbackName}`;
-          script.async = true;
-
-          script.onerror = function () {
-            cleanup();
-            reject(new Error("No pude conectar con Apps Script."));
-          };
-
-          activeJsonpScript = script;
-          document.body.appendChild(script);
-
-          setTimeout(() => {
-            if (window[callbackName]) {
-              cleanup();
-              reject(new Error("La API tardo demasiado en responder."));
-            }
-          }, 10000);
-        });
       }
 
       async function listCameras() {
@@ -690,22 +682,65 @@
         setStatus("Verificando QR... Ya podes retirar el QR de la camara.", "warn");
 
         try {
-          const url = APPS_SCRIPT_URL + "?action=register&qrText=" + encodeURIComponent(cleaned);
-          const res = await jsonp(url);
+          const headers = {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: "Bearer " + SUPABASE_ANON_KEY
+          };
+          const profileResponse = await fetch(
+            `${SUPABASE_URL}/rest/v1/athletes?qr_code=eq.${encodeURIComponent(cleaned)}&select=full_name,id`,
+            { headers }
+          );
+          if (!profileResponse.ok) {
+            throw new Error("No se pudo consultar el atleta.");
+          }
 
-          if (!res.ok && !res.found) {
-            setStatus(res.message || "No se pudo registrar.", "err");
-          } else if (res.duplicate) {
-            setTemporaryStatus(buildSuccessMessage(res, res.message || "Ya registrado."), "warn");
+          const profiles = await profileResponse.json();
+          if (!Array.isArray(profiles) || profiles.length === 0) {
+            setStatus("QR no reconocido.", "err");
+            manualQrEl.value = "";
+            return;
+          }
+
+          const athleteName = String(profiles[0]?.full_name || "").trim();
+          const todayIso = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
+          const duplicateResponse = await fetch(
+            `${SUPABASE_URL}/rest/v1/attendance_events?qr_code=eq.${encodeURIComponent(cleaned)}&checked_in_at=gte.${todayIso}&select=id`,
+            { headers }
+          );
+          if (!duplicateResponse.ok) {
+            throw new Error("No se pudo validar asistencia previa.");
+          }
+
+          const duplicates = await duplicateResponse.json();
+          if (Array.isArray(duplicates) && duplicates.length > 0) {
+            manualQrEl.value = "";
+            setTemporaryStatus(buildSuccessMessage({ athleteName: athleteName }, "Ya registrado hoy."), "warn");
             beepSuccess();
-          } else {
-            const name = extractFirstName(res);
-            logAttendance(cleaned, name);
-            setTemporaryStatus(buildSuccessMessage(res, res.message || "Check-in registrado."), "ok");
-            beepSuccess();
+            return;
+          }
+
+          const insertResponse = await fetch(SUPABASE_URL + "/rest/v1/attendance_events", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: "Bearer " + SUPABASE_ANON_KEY,
+              Prefer: "return=minimal"
+            },
+            body: JSON.stringify({
+              qr_code: cleaned,
+              athlete_name: athleteName,
+              checked_in_at: new Date().toISOString(),
+              source: "qr_scanner"
+            })
+          });
+          if (!insertResponse.ok) {
+            throw new Error("No se pudo registrar el check-in.");
           }
 
           manualQrEl.value = "";
+          setTemporaryStatus(buildSuccessMessage({ athleteName: athleteName }, "Check-in registrado."), "ok");
+          beepSuccess();
         } catch (error) {
           setStatus("Error al registrar: " + error.message, "err");
         } finally {
@@ -771,7 +806,9 @@
             selectedCameraId = settings && settings.deviceId ? settings.deviceId : "";
           }
 
-          setPanelOpen(cameraPanelEl, cameraToggleEl, true);
+          if (!isPhoneLayout.matches) {
+            setPanelOpen(cameraPanelEl, cameraToggleEl, true);
+          }
           syncControls();
           startScanLoop();
           setStatus("Escanea el QR de tu tarjeta de membresia", "");
@@ -816,19 +853,28 @@
           const cameras = await listCameras();
           fillCameraOptions(cameras);
 
-          const res = await jsonp(APPS_SCRIPT_URL + "?action=ping");
-          if (res && res.ok) {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/athletes?select=id&limit=1`, {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: "Bearer " + SUPABASE_ANON_KEY
+            }
+          });
+          if (res.ok) {
             setStatus("Listo para escanear.", "");
           } else {
-            setStatus("La API respondio, pero no como esperaba.", "warn");
+            setStatus("Supabase respondio, pero no como esperaba.", "warn");
           }
         } catch (error) {
-          setStatus("No pude conectar con Apps Script: " + error.message, "err");
+          setStatus("No pude conectar con Supabase: " + error.message, "err");
         }
 
         syncControls();
         setPanelOpen(cameraPanelEl, cameraToggleEl, false);
         setPanelOpen(manualPanelEl, manualToggleEl, false);
+
+        if (isPhoneLayout.matches) {
+          await startScanner();
+        }
       })();
     </script>
   </body>
