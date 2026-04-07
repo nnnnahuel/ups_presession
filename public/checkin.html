@@ -393,6 +393,8 @@
 
     <script>
       const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbytLPt2OIOJwhtbNISzjnxzcbtLfSMfR7PgLg7HgZEarzFOriYNyCLKUuk2QHESQ-uxJQ/exec";
+      const SUPABASE_URL = "https://sfwmeifxvangpwrrycda.supabase.co";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmd21laWZ4dmFuZ3B3cnJ5Y2RhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3MDk5MDksImV4cCI6MjA4NDI4NTkwOX0.Yw0nCjoErcJojKKIbDxkBT985oY1YiP4IugO2qDMd-A";
 
       let stream = null;
       let isSaving = false;
@@ -509,6 +511,24 @@
           return "Hola " + firstName + " " + "\u{1F5A4}";
         }
         return fallback;
+      }
+
+      function logAttendance(qrCode, athleteName) {
+        fetch(SUPABASE_URL + "/rest/v1/attendance_events", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: "Bearer " + SUPABASE_ANON_KEY,
+            Prefer: "return=minimal"
+          },
+          body: JSON.stringify({
+            qr_code: qrCode,
+            athlete_name: athleteName,
+            checked_in_at: new Date().toISOString(),
+            source: "qr_scanner"
+          })
+        }).catch(() => {});
       }
 
       function jsonp(url) {
@@ -679,6 +699,8 @@
             setTemporaryStatus(buildSuccessMessage(res, res.message || "Ya registrado."), "warn");
             beepSuccess();
           } else {
+            const name = extractFirstName(res);
+            logAttendance(cleaned, name);
             setTemporaryStatus(buildSuccessMessage(res, res.message || "Check-in registrado."), "ok");
             beepSuccess();
           }
