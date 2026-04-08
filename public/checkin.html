@@ -457,6 +457,9 @@
       let selectedCameraId = "";
       let mirrorMode = "auto";
       let statusResetTimer = 0;
+      let mobileDetectionInFlight = false;
+      let mobileBarcodeDetectorPromise = null;
+      let mobileBarcodeDetectorDisabled = false;
 
       const statusEl = document.getElementById("status");
       const manualQrEl = document.getElementById("manualQr");
@@ -579,6 +582,48 @@
         return fallback;
       }
 
+      async function getMobileBarcodeDetector() {
+        if (!isPhoneLayout.matches || mobileBarcodeDetectorDisabled || typeof window.BarcodeDetector !== "function") {
+          return null;
+        }
+
+        if (!mobileBarcodeDetectorPromise) {
+          mobileBarcodeDetectorPromise = (async () => {
+            try {
+              if (typeof window.BarcodeDetector.getSupportedFormats === "function") {
+                const formats = await window.BarcodeDetector.getSupportedFormats();
+                if (Array.isArray(formats) && !formats.includes("qr_code")) {
+                  return null;
+                }
+              }
+
+              return new window.BarcodeDetector({ formats: ["qr_code"] });
+            } catch (_) {
+              return null;
+            }
+          })();
+        }
+
+        return mobileBarcodeDetectorPromise;
+      }
+
+      async function detectMobileBarcode() {
+        const detector = await getMobileBarcodeDetector();
+        if (!detector) return "";
+
+        try {
+          const barcodes = await detector.detect(videoEl);
+          if (!Array.isArray(barcodes) || barcodes.length === 0) return "";
+
+          const first = barcodes[0];
+          return String(first?.rawValue || first?.value || "").trim();
+        } catch (_) {
+          mobileBarcodeDetectorDisabled = true;
+          mobileBarcodeDetectorPromise = null;
+          return "";
+        }
+      }
+
       async function listCameras() {
         const devices = await navigator.mediaDevices.enumerateDevices();
         return devices.filter((device) => device.kind === "videoinput");
@@ -670,6 +715,7 @@
         }
 
         videoEl.srcObject = null;
+        mobileDetectionInFlight = false;
         setStatus("Camara detenida.", "");
         syncControls();
       }
@@ -801,17 +847,33 @@
           if (!stream) return;
 
           if (videoEl.readyState >= 2 && !isSaving) {
+            if (isPhoneLayout.matches && !mobileDetectionInFlight) {
+              mobileDetectionInFlight = true;
+              detectMobileBarcode()
+                .then((result) => {
+                  if (result && !isSaving) {
+                    saveCheckin(result);
+                  }
+                })
+                .finally(() => {
+                  mobileDetectionInFlight = false;
+                });
+            }
+
+            const canUseJsQrFallback = !isPhoneLayout.matches || mobileBarcodeDetectorDisabled || typeof window.BarcodeDetector !== "function";
             const attempts = mirrorMode === "on"
               ? [true]
               : mirrorMode === "off"
                 ? [false]
                 : [false, true];
 
-            for (const mirrored of attempts) {
-              const result = decodeFrame(mirrored);
-              if (result) {
-                saveCheckin(result);
-                break;
+            if (canUseJsQrFallback) {
+              for (const mirrored of attempts) {
+                const result = decodeFrame(mirrored);
+                if (result) {
+                  saveCheckin(result);
+                  break;
+                }
               }
             }
           }
