@@ -595,6 +595,41 @@
         return preferred || cameras[0];
       }
 
+      function pickMobileRearCamera(cameras) {
+        if (!Array.isArray(cameras) || cameras.length === 0) return null;
+
+        const scored = cameras
+          .map((camera) => {
+            const label = String(camera.label || "").toLowerCase();
+            let score = 0;
+
+            if (/rear|back|environment|world/.test(label)) score += 50;
+            if (/front|user|selfie|facetime/.test(label)) score -= 100;
+            if (/ultra|macro|depth/.test(label)) score -= 20;
+
+            return { camera, score };
+          })
+          .sort((a, b) => b.score - a.score);
+
+        return scored[0] ? scored[0].camera : null;
+      }
+
+      function buildVideoConstraints(deviceId = "") {
+        if (deviceId) {
+          return {
+            deviceId: { exact: deviceId },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          };
+        }
+
+        return {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        };
+      }
+
       function fillCameraOptions(cameras) {
         cameraSelectEl.innerHTML = "";
 
@@ -791,32 +826,36 @@
         try {
           await stopScanner();
 
-          const constraints = {
+          const initialDeviceId = !isPhoneLayout.matches ? selectedCameraId : "";
+          stream = await navigator.mediaDevices.getUserMedia({
             audio: false,
-            video: !isPhoneLayout.matches && selectedCameraId
-              ? {
-                  deviceId: { exact: selectedCameraId },
-                  width: { ideal: 1920 },
-                  height: { ideal: 1080 }
-                }
-              : {
-                  facingMode: { ideal: "environment" },
-                  width: { ideal: 1920 },
-                  height: { ideal: 1080 }
-                }
-          };
-
-          stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video: buildVideoConstraints(initialDeviceId)
+          });
           videoEl.srcObject = stream;
           await videoEl.play();
 
           const cameras = await listCameras();
           fillCameraOptions(cameras);
 
-          const track = stream.getVideoTracks()[0];
-          if (!selectedCameraId && track) {
-            const settings = track.getSettings ? track.getSettings() : null;
-            if (!isPhoneLayout.matches) {
+          let track = stream.getVideoTracks()[0];
+          let settings = track && track.getSettings ? track.getSettings() : null;
+          const activeDeviceId = settings && settings.deviceId ? settings.deviceId : "";
+
+          if (isPhoneLayout.matches) {
+            const preferredCamera = pickMobileRearCamera(cameras);
+            if (preferredCamera && preferredCamera.deviceId && preferredCamera.deviceId !== activeDeviceId) {
+              stream.getTracks().forEach((activeTrack) => activeTrack.stop());
+              stream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: buildVideoConstraints(preferredCamera.deviceId)
+              });
+              videoEl.srcObject = stream;
+              await videoEl.play();
+              track = stream.getVideoTracks()[0];
+              settings = track && track.getSettings ? track.getSettings() : null;
+            }
+          } else if (!selectedCameraId && track) {
+            if (settings) {
               selectedCameraId = settings && settings.deviceId ? settings.deviceId : "";
             }
           }
