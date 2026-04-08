@@ -462,15 +462,14 @@
       let mobileBarcodeDetectorDisabled = false;
       let mobileScanCanvas = null;
       let mobileScanContext = null;
+      let mobileScanRegions = [];
 
       const statusEl = document.getElementById("status");
       const manualQrEl = document.getElementById("manualQr");
       const startBtn = document.getElementById("startBtn");
       const stopBtn = document.getElementById("stopBtn");
       const manualBtn = document.getElementById("manualBtn");
-      const readerEl = document.getElementById("reader");
       const videoEl = document.getElementById("readerVideo");
-      const overlayBoxEl = document.querySelector(".overlay-box");
       const cameraSelectEl = document.getElementById("cameraSelect");
       const mirrorBtn = document.getElementById("mirrorBtn");
       const cameraPanelEl = document.getElementById("cameraPanel");
@@ -616,21 +615,21 @@
         if (!detector) return "";
 
         try {
-          const sources = [];
-          const normalCanvas = drawMobileScanCanvas(false, "normal");
-          const contrastCanvas = drawMobileScanCanvas(false, "contrast");
+          const regions = mobileScanRegions.length > 0 ? mobileScanRegions : [{ sx: 0, sy: 0, sw: videoEl.videoWidth, sh: videoEl.videoHeight }];
+          const presets = ["normal", "contrast"];
 
-          if (normalCanvas) sources.push(normalCanvas);
-          if (contrastCanvas) sources.push(contrastCanvas);
-          if (sources.length === 0) sources.push(videoEl);
+          for (const region of regions) {
+            for (const preset of presets) {
+              const source = drawMobileScanCanvas(false, preset, region);
+              if (!source) continue;
 
-          for (const source of sources) {
-            const barcodes = await detector.detect(source);
-            if (!Array.isArray(barcodes) || barcodes.length === 0) continue;
+              const barcodes = await detector.detect(source);
+              if (!Array.isArray(barcodes) || barcodes.length === 0) continue;
 
-            const first = barcodes[0];
-            const value = String(first?.rawValue || first?.value || "").trim();
-            if (value) return value;
+              const first = barcodes[0];
+              const value = String(first?.rawValue || first?.value || "").trim();
+              if (value) return value;
+            }
           }
 
           return "";
@@ -692,6 +691,31 @@
         };
       }
 
+      function buildMobileScanRegions(width, height) {
+        const regions = [];
+        const full = { sx: 0, sy: 0, sw: width, sh: height };
+        regions.push(full);
+
+        const scale = 0.72;
+        const sw = Math.max(1, Math.round(width * scale));
+        const sh = Math.max(1, Math.round(height * scale));
+        const centers = [
+          { x: 0.5, y: 0.5 },
+          { x: 0.25, y: 0.25 },
+          { x: 0.75, y: 0.25 },
+          { x: 0.25, y: 0.75 },
+          { x: 0.75, y: 0.75 }
+        ];
+
+        centers.forEach(({ x, y }) => {
+          const sx = Math.max(0, Math.min(width - sw, Math.round(width * x - sw / 2)));
+          const sy = Math.max(0, Math.min(height - sh, Math.round(height * y - sh / 2)));
+          regions.push({ sx, sy, sw, sh });
+        });
+
+        return regions;
+      }
+
       function fillCameraOptions(cameras) {
         cameraSelectEl.innerHTML = "";
 
@@ -749,48 +773,6 @@
         return mobileScanCanvas;
       }
 
-      function getMobileScanRegion() {
-        const width = videoEl.videoWidth;
-        const height = videoEl.videoHeight;
-        if (!width || !height || !readerEl || !overlayBoxEl) {
-          return { sx: 0, sy: 0, sw: width, sh: height };
-        }
-
-        const readerRect = readerEl.getBoundingClientRect();
-        const overlayRect = overlayBoxEl.getBoundingClientRect();
-        if (!readerRect.width || !readerRect.height || !overlayRect.width || !overlayRect.height) {
-          return { sx: 0, sy: 0, sw: width, sh: height };
-        }
-
-        const videoAspect = width / height;
-        const readerAspect = readerRect.width / readerRect.height;
-        let renderedWidth = readerRect.width;
-        let renderedHeight = readerRect.height;
-        let cropOffsetX = 0;
-        let cropOffsetY = 0;
-
-        if (videoAspect > readerAspect) {
-          renderedHeight = readerRect.height;
-          renderedWidth = renderedHeight * videoAspect;
-          cropOffsetX = (renderedWidth - readerRect.width) / 2;
-        } else {
-          renderedWidth = readerRect.width;
-          renderedHeight = renderedWidth / videoAspect;
-          cropOffsetY = (renderedHeight - readerRect.height) / 2;
-        }
-
-        const displayX = overlayRect.left - readerRect.left + cropOffsetX;
-        const displayY = overlayRect.top - readerRect.top + cropOffsetY;
-        const scaleX = width / renderedWidth;
-        const scaleY = height / renderedHeight;
-        const sx = Math.max(0, Math.floor(displayX * scaleX));
-        const sy = Math.max(0, Math.floor(displayY * scaleY));
-        const sw = Math.max(1, Math.min(width - sx, Math.floor(overlayRect.width * scaleX)));
-        const sh = Math.max(1, Math.min(height - sy, Math.floor(overlayRect.height * scaleY)));
-
-        return { sx, sy, sw, sh };
-      }
-
       function applyMobileImagePreset(imageData, preset) {
         const data = imageData.data;
 
@@ -829,15 +811,15 @@
         return imageData;
       }
 
-      function drawMobileScanCanvas(mirrored, preset = "normal") {
+      function drawMobileScanCanvas(mirrored, preset = "normal", region = null) {
         const width = videoEl.videoWidth;
         const height = videoEl.videoHeight;
         if (!width || !height) return null;
 
-        const region = getMobileScanRegion();
-        const scale = Math.min(1, 960 / Math.max(region.sw, region.sh));
-        const targetWidth = Math.max(1, Math.round(region.sw * scale));
-        const targetHeight = Math.max(1, Math.round(region.sh * scale));
+        const scanRegion = region || { sx: 0, sy: 0, sw: width, sh: height };
+        const scale = Math.min(1, 960 / Math.max(scanRegion.sw, scanRegion.sh));
+        const targetWidth = Math.max(1, Math.round(scanRegion.sw * scale));
+        const targetHeight = Math.max(1, Math.round(scanRegion.sh * scale));
         const canvas = ensureMobileScanCanvas(targetWidth, targetHeight);
         if (!canvas || !mobileScanContext) return null;
 
@@ -847,7 +829,7 @@
           mobileScanContext.translate(targetWidth, 0);
           mobileScanContext.scale(-1, 1);
         }
-        mobileScanContext.drawImage(videoEl, region.sx, region.sy, region.sw, region.sh, 0, 0, targetWidth, targetHeight);
+        mobileScanContext.drawImage(videoEl, scanRegion.sx, scanRegion.sy, scanRegion.sw, scanRegion.sh, 0, 0, targetWidth, targetHeight);
         mobileScanContext.restore();
 
         if (preset !== "normal") {
@@ -864,16 +846,20 @@
         }
 
         if (isPhoneLayout.matches) {
+          const regions = mobileScanRegions.length > 0 ? mobileScanRegions : [{ sx: 0, sy: 0, sw: videoEl.videoWidth, sh: videoEl.videoHeight }];
           const presets = ["normal", "contrast", "threshold"];
-          for (const preset of presets) {
-            const canvas = drawMobileScanCanvas(mirrored, preset);
-            if (!canvas || !mobileScanContext) continue;
 
-            const imageData = mobileScanContext.getImageData(0, 0, canvas.width, canvas.height);
-            const result = window.jsQR(imageData.data, canvas.width, canvas.height, {
-              inversionAttempts: "attemptBoth"
-            });
-            if (result) return result.data;
+          for (const region of regions) {
+            for (const preset of presets) {
+              const canvas = drawMobileScanCanvas(mirrored, preset, region);
+              if (!canvas || !mobileScanContext) continue;
+
+              const imageData = mobileScanContext.getImageData(0, 0, canvas.width, canvas.height);
+              const result = window.jsQR(imageData.data, canvas.width, canvas.height, {
+                inversionAttempts: "attemptBoth"
+              });
+              if (result) return result.data;
+            }
           }
 
           return null;
@@ -936,6 +922,22 @@
             await track.applyConstraints({ advanced });
           }
         } catch (_) {}
+      }
+
+      function refreshMobileScanRegions() {
+        if (!isPhoneLayout.matches) {
+          mobileScanRegions = [];
+          return;
+        }
+
+        const width = videoEl.videoWidth;
+        const height = videoEl.videoHeight;
+        if (!width || !height) {
+          mobileScanRegions = [];
+          return;
+        }
+
+        mobileScanRegions = buildMobileScanRegions(width, height);
       }
 
       async function saveCheckin(qrText) {
@@ -1077,6 +1079,7 @@
           });
           videoEl.srcObject = stream;
           await videoEl.play();
+          refreshMobileScanRegions();
 
           const cameras = await listCameras();
           fillCameraOptions(cameras);
@@ -1095,6 +1098,7 @@
               });
               videoEl.srcObject = stream;
               await videoEl.play();
+              refreshMobileScanRegions();
               track = stream.getVideoTracks()[0];
               settings = track && track.getSettings ? track.getSettings() : null;
             }
