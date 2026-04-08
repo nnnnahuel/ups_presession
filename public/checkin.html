@@ -517,8 +517,21 @@
         return "Espejo: Auto";
       }
 
+      function shouldMirrorPreview() {
+        if (mirrorMode === "on") return true;
+        if (mirrorMode === "off") return false;
+
+        const track = stream ? stream.getVideoTracks()[0] : null;
+        const settings = track && track.getSettings ? track.getSettings() : null;
+        const facingMode = String(settings && settings.facingMode ? settings.facingMode : "").toLowerCase();
+
+        if (facingMode === "environment") return false;
+        if (facingMode === "user") return true;
+        return !isPhoneLayout.matches;
+      }
+
       function applyMirrorToPreview() {
-        const shouldMirror = mirrorMode !== "off";
+        const shouldMirror = shouldMirrorPreview();
         videoEl.style.transform = shouldMirror ? "scaleX(-1)" : "scaleX(1)";
         videoEl.style.transformOrigin = "center";
       }
@@ -597,7 +610,7 @@
           cameraSelectEl.appendChild(option);
         });
 
-        if (!selectedCameraId) {
+        if (!selectedCameraId && !isPhoneLayout.matches) {
           const preferred = pickCamera(cameras);
           selectedCameraId = preferred ? preferred.deviceId : "";
         }
@@ -780,14 +793,14 @@
 
           const constraints = {
             audio: false,
-            video: selectedCameraId
+            video: !isPhoneLayout.matches && selectedCameraId
               ? {
                   deviceId: { exact: selectedCameraId },
                   width: { ideal: 1920 },
                   height: { ideal: 1080 }
                 }
               : {
-                  facingMode: "environment",
+                  facingMode: { ideal: "environment" },
                   width: { ideal: 1920 },
                   height: { ideal: 1080 }
                 }
@@ -803,7 +816,9 @@
           const track = stream.getVideoTracks()[0];
           if (!selectedCameraId && track) {
             const settings = track.getSettings ? track.getSettings() : null;
-            selectedCameraId = settings && settings.deviceId ? settings.deviceId : "";
+            if (!isPhoneLayout.matches) {
+              selectedCameraId = settings && settings.deviceId ? settings.deviceId : "";
+            }
           }
 
           if (!isPhoneLayout.matches) {
