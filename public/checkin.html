@@ -460,13 +460,17 @@
       let mobileDetectionInFlight = false;
       let mobileBarcodeDetectorPromise = null;
       let mobileBarcodeDetectorDisabled = false;
+      let mobileScanCanvas = null;
+      let mobileScanContext = null;
 
       const statusEl = document.getElementById("status");
       const manualQrEl = document.getElementById("manualQr");
       const startBtn = document.getElementById("startBtn");
       const stopBtn = document.getElementById("stopBtn");
       const manualBtn = document.getElementById("manualBtn");
+      const readerEl = document.getElementById("reader");
       const videoEl = document.getElementById("readerVideo");
+      const overlayBoxEl = document.querySelector(".overlay-box");
       const cameraSelectEl = document.getElementById("cameraSelect");
       const mirrorBtn = document.getElementById("mirrorBtn");
       const cameraPanelEl = document.getElementById("cameraPanel");
@@ -612,11 +616,24 @@
         if (!detector) return "";
 
         try {
-          const barcodes = await detector.detect(videoEl);
-          if (!Array.isArray(barcodes) || barcodes.length === 0) return "";
+          const sources = [];
+          const normalCanvas = drawMobileScanCanvas(false, "normal");
+          const contrastCanvas = drawMobileScanCanvas(false, "contrast");
 
-          const first = barcodes[0];
-          return String(first?.rawValue || first?.value || "").trim();
+          if (normalCanvas) sources.push(normalCanvas);
+          if (contrastCanvas) sources.push(contrastCanvas);
+          if (sources.length === 0) sources.push(videoEl);
+
+          for (const source of sources) {
+            const barcodes = await detector.detect(source);
+            if (!Array.isArray(barcodes) || barcodes.length === 0) continue;
+
+            const first = barcodes[0];
+            const value = String(first?.rawValue || first?.value || "").trim();
+            if (value) return value;
+          }
+
+          return "";
         } catch (_) {
           mobileBarcodeDetectorDisabled = true;
           mobileBarcodeDetectorPromise = null;
@@ -720,8 +737,145 @@
         syncControls();
       }
 
+      function ensureMobileScanCanvas(width, height) {
+        if (!mobileScanCanvas) {
+          mobileScanCanvas = document.createElement("canvas");
+          mobileScanContext = mobileScanCanvas.getContext("2d", { willReadFrequently: true });
+        }
+        if (!mobileScanContext) return null;
+
+        if (mobileScanCanvas.width !== width) mobileScanCanvas.width = width;
+        if (mobileScanCanvas.height !== height) mobileScanCanvas.height = height;
+        return mobileScanCanvas;
+      }
+
+      function getMobileScanRegion() {
+        const width = videoEl.videoWidth;
+        const height = videoEl.videoHeight;
+        if (!width || !height || !readerEl || !overlayBoxEl) {
+          return { sx: 0, sy: 0, sw: width, sh: height };
+        }
+
+        const readerRect = readerEl.getBoundingClientRect();
+        const overlayRect = overlayBoxEl.getBoundingClientRect();
+        if (!readerRect.width || !readerRect.height || !overlayRect.width || !overlayRect.height) {
+          return { sx: 0, sy: 0, sw: width, sh: height };
+        }
+
+        const videoAspect = width / height;
+        const readerAspect = readerRect.width / readerRect.height;
+        let renderedWidth = readerRect.width;
+        let renderedHeight = readerRect.height;
+        let cropOffsetX = 0;
+        let cropOffsetY = 0;
+
+        if (videoAspect > readerAspect) {
+          renderedHeight = readerRect.height;
+          renderedWidth = renderedHeight * videoAspect;
+          cropOffsetX = (renderedWidth - readerRect.width) / 2;
+        } else {
+          renderedWidth = readerRect.width;
+          renderedHeight = renderedWidth / videoAspect;
+          cropOffsetY = (renderedHeight - readerRect.height) / 2;
+        }
+
+        const displayX = overlayRect.left - readerRect.left + cropOffsetX;
+        const displayY = overlayRect.top - readerRect.top + cropOffsetY;
+        const scaleX = width / renderedWidth;
+        const scaleY = height / renderedHeight;
+        const sx = Math.max(0, Math.floor(displayX * scaleX));
+        const sy = Math.max(0, Math.floor(displayY * scaleY));
+        const sw = Math.max(1, Math.min(width - sx, Math.floor(overlayRect.width * scaleX)));
+        const sh = Math.max(1, Math.min(height - sy, Math.floor(overlayRect.height * scaleY)));
+
+        return { sx, sy, sw, sh };
+      }
+
+      function applyMobileImagePreset(imageData, preset) {
+        const data = imageData.data;
+
+        if (preset === "contrast") {
+          const contrast = 1.65;
+          for (let index = 0; index < data.length; index += 4) {
+            const luminance = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+            const value = Math.max(0, Math.min(255, (luminance - 128) * contrast + 128));
+            data[index] = value;
+            data[index + 1] = value;
+            data[index + 2] = value;
+          }
+          return imageData;
+        }
+
+        if (preset === "threshold") {
+          let minLuma = 255;
+          let maxLuma = 0;
+
+          for (let index = 0; index < data.length; index += 4) {
+            const luminance = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+            if (luminance < minLuma) minLuma = luminance;
+            if (luminance > maxLuma) maxLuma = luminance;
+          }
+
+          const threshold = (minLuma + maxLuma) / 2;
+          for (let index = 0; index < data.length; index += 4) {
+            const luminance = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+            const value = luminance >= threshold ? 255 : 0;
+            data[index] = value;
+            data[index + 1] = value;
+            data[index + 2] = value;
+          }
+        }
+
+        return imageData;
+      }
+
+      function drawMobileScanCanvas(mirrored, preset = "normal") {
+        const width = videoEl.videoWidth;
+        const height = videoEl.videoHeight;
+        if (!width || !height) return null;
+
+        const region = getMobileScanRegion();
+        const scale = Math.min(1, 960 / Math.max(region.sw, region.sh));
+        const targetWidth = Math.max(1, Math.round(region.sw * scale));
+        const targetHeight = Math.max(1, Math.round(region.sh * scale));
+        const canvas = ensureMobileScanCanvas(targetWidth, targetHeight);
+        if (!canvas || !mobileScanContext) return null;
+
+        mobileScanContext.save();
+        mobileScanContext.clearRect(0, 0, targetWidth, targetHeight);
+        if (mirrored) {
+          mobileScanContext.translate(targetWidth, 0);
+          mobileScanContext.scale(-1, 1);
+        }
+        mobileScanContext.drawImage(videoEl, region.sx, region.sy, region.sw, region.sh, 0, 0, targetWidth, targetHeight);
+        mobileScanContext.restore();
+
+        if (preset !== "normal") {
+          const imageData = mobileScanContext.getImageData(0, 0, targetWidth, targetHeight);
+          mobileScanContext.putImageData(applyMobileImagePreset(imageData, preset), 0, 0);
+        }
+
+        return canvas;
+      }
+
       function decodeFrame(mirrored) {
         if (typeof window.jsQR !== "function") {
+          return null;
+        }
+
+        if (isPhoneLayout.matches) {
+          const presets = ["normal", "contrast", "threshold"];
+          for (const preset of presets) {
+            const canvas = drawMobileScanCanvas(mirrored, preset);
+            if (!canvas || !mobileScanContext) continue;
+
+            const imageData = mobileScanContext.getImageData(0, 0, canvas.width, canvas.height);
+            const result = window.jsQR(imageData.data, canvas.width, canvas.height, {
+              inversionAttempts: "attemptBoth"
+            });
+            if (result) return result.data;
+          }
+
           return null;
         }
 
@@ -754,6 +908,34 @@
         });
 
         return result ? result.data : null;
+      }
+
+      async function applyMobileTrackConstraints(track) {
+        if (!isPhoneLayout.matches || !track || typeof track.getCapabilities !== "function" || typeof track.applyConstraints !== "function") {
+          return;
+        }
+
+        try {
+          const capabilities = track.getCapabilities();
+          const advanced = [];
+
+          if (Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes("continuous")) {
+            advanced.push({ focusMode: "continuous" });
+          }
+
+          if (Array.isArray(capabilities.exposureMode) && capabilities.exposureMode.includes("continuous")) {
+            advanced.push({ exposureMode: "continuous" });
+          }
+
+          if (capabilities.zoom && typeof capabilities.zoom.max === "number" && typeof capabilities.zoom.min === "number" && capabilities.zoom.max > capabilities.zoom.min) {
+            const preferredZoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, 1.5));
+            advanced.push({ zoom: preferredZoom });
+          }
+
+          if (advanced.length) {
+            await track.applyConstraints({ advanced });
+          }
+        } catch (_) {}
       }
 
       async function saveCheckin(qrText) {
@@ -916,6 +1098,7 @@
               track = stream.getVideoTracks()[0];
               settings = track && track.getSettings ? track.getSettings() : null;
             }
+            await applyMobileTrackConstraints(track);
           } else if (!selectedCameraId && track) {
             if (settings) {
               selectedCameraId = settings && settings.deviceId ? settings.deviceId : "";
