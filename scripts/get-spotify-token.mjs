@@ -17,6 +17,8 @@ const scope = [
   "playlist-modify-private",
   "playlist-modify-public",
   "user-top-read",
+  "user-read-playback-state",
+  "user-modify-playback-state",
 ].join(" ");
 
 const authorizeUrl = new URL("https://accounts.spotify.com/authorize");

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import { getRecentLogs, initPlaylistTables } from "./playlist/state.mjs";
 import { runPlaylistRotation } from "./playlist/rotate.mjs";
+import { SpotifyClient } from "./playlist/spotify.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,37 @@ const WORKER_TOKEN = process.env.WORKER_TOKEN || "";
 const PLAYLIST_API_TOKEN = process.env.PLAYLIST_API_TOKEN || "";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
+const hasSpotify = Boolean(
+  process.env.SPOTIFY_CLIENT_ID &&
+  process.env.SPOTIFY_CLIENT_SECRET &&
+  process.env.SPOTIFY_REFRESH_TOKEN
+);
+
+let _spotifyClient = null;
+
+async function withSpotify(fn) {
+  if (!hasSpotify) throw new Error("spotify_not_configured");
+  if (!_spotifyClient) {
+    _spotifyClient = new SpotifyClient({
+      clientId: process.env.SPOTIFY_CLIENT_ID,
+      clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+      refreshToken: process.env.SPOTIFY_REFRESH_TOKEN,
+    });
+  }
+  if (!_spotifyClient.accessToken) {
+    await _spotifyClient.authenticate();
+  }
+  try {
+    return await fn(_spotifyClient);
+  } catch (err) {
+    if (String(err.message).includes("401")) {
+      _spotifyClient.accessToken = null;
+      await _spotifyClient.authenticate();
+      return fn(_spotifyClient);
+    }
+    throw err;
+  }
+}
 const ttsCache = new Map();
 const commandQueue = [];
 const startState = { value: "", consumedAt: null };
@@ -431,6 +463,41 @@ app.post("/screen/api/worker/commands/:id/ack", requireWorkerAuth, (req, res) =>
   workerState.lastError = status === "error" ? String(req.body?.error || "unknown_error") : null;
 
   res.json({ ok: true });
+});
+
+app.get("/api/spotify/volume", async (_req, res) => {
+  if (!hasSpotify) {
+    res.status(503).json({ error: "spotify_not_configured" });
+    return;
+  }
+  try {
+    const state = await withSpotify((client) => client.getPlaybackState());
+    if (!state) {
+      res.json({ playing: false, volume: null, device: null });
+      return;
+    }
+    res.json({
+      playing: state.is_playing ?? false,
+      volume: state.device?.volume_percent ?? null,
+      device: state.device?.name ?? null,
+    });
+  } catch (err) {
+    res.status(502).json({ error: "spotify_error", detail: err.message });
+  }
+});
+
+app.get("/api/spotify/volume/:pct", async (req, res) => {
+  if (!hasSpotify) {
+    res.status(503).json({ error: "spotify_not_configured" });
+    return;
+  }
+  const pct = clampPct(req.params.pct);
+  try {
+    await withSpotify((client) => client.setVolume(pct));
+    res.json({ ok: true, pct });
+  } catch (err) {
+    res.status(502).json({ error: "spotify_error", detail: err.message });
+  }
 });
 
 app.use(
