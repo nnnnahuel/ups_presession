@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>UP.S Check-in</title>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script src="https://sdk.scdn.co/spotify-player.js"></script>
     <style>
       :root {
         color-scheme: dark;
@@ -1178,6 +1179,63 @@
         if (isPhoneLayout.matches) {
           await startScanner();
         }
+      })();
+
+      // ── Spotify Web Playback SDK ──────────────────────────────
+      let _spotifyPlayer = null;
+
+      async function fetchSdkToken() {
+        const r = await fetch("/checkin/sdk-token");
+        if (!r.ok) throw new Error("sdk_token_unavailable");
+        const { token } = await r.json();
+        return token;
+      }
+
+      window.onSpotifyWebPlaybackSDKReady = async () => {
+        try {
+          const token = await fetchSdkToken();
+          const player = new Spotify.Player({
+            name: "UP.S Check-In",
+            getOAuthToken: (cb) => fetchSdkToken().then(cb).catch(() => {}),
+            volume: 0.9,
+          });
+          player.connect();
+          _spotifyPlayer = player;
+        } catch (_) {}
+      };
+
+      function rampPlayerVolume(targetPct, duration) {
+        const player = _spotifyPlayer;
+        if (!player) return;
+        player.getVolume().then((startVol) => {
+          const targetVol = targetPct / 100;
+          const steps = 20;
+          const stepMs = Math.max(50, duration / steps);
+          let step = 0;
+          const iv = setInterval(() => {
+            step++;
+            const vol = startVol + (targetVol - startVol) * (step / steps);
+            player.setVolume(Math.max(0, Math.min(1, vol)));
+            if (step >= steps) clearInterval(iv);
+          }, stepMs);
+        });
+      }
+
+      // ── SSE — recibe comandos de volumen del servidor ─────────
+      (function connectCheckinEvents() {
+        const src = new EventSource("/checkin/events");
+        src.addEventListener("rampVolume", (e) => {
+          const { targetPct, duration } = JSON.parse(e.data);
+          rampPlayerVolume(targetPct, duration);
+        });
+        src.addEventListener("setVolume", (e) => {
+          const { pct } = JSON.parse(e.data);
+          if (_spotifyPlayer) _spotifyPlayer.setVolume(pct / 100);
+        });
+        src.onerror = () => {
+          src.close();
+          setTimeout(connectCheckinEvents, 5000);
+        };
       })();
     </script>
   </body>

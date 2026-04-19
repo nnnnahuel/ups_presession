@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import { getRecentLogs, initPlaylistTables } from "./playlist/state.mjs";
 import { runPlaylistRotation } from "./playlist/rotate.mjs";
 import { SpotifyClient } from "./playlist/spotify.mjs";
+import cron from "node-cron";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,6 +31,22 @@ const hasSpotify = Boolean(
 );
 
 let _spotifyClient = null;
+let _gymSpotifyClient = null;
+
+const hasGymSpotify = Boolean(
+  process.env.SPOTIFY_CLIENT_ID &&
+  process.env.SPOTIFY_CLIENT_SECRET &&
+  process.env.SPOTIFY_GYM_REFRESH_TOKEN
+);
+
+const checkinClients = new Set();
+
+function broadcastCheckin(event, data) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const res of checkinClients) {
+    try { res.write(payload); } catch (_) {}
+  }
+}
 
 async function withSpotify(fn) {
   if (!hasSpotify) throw new Error("spotify_not_configured");
@@ -465,6 +482,77 @@ app.post("/screen/api/worker/commands/:id/ack", requireWorkerAuth, (req, res) =>
   res.json({ ok: true });
 });
 
+async function withGymSpotify(fn) {
+  if (!hasGymSpotify) throw new Error("gym_spotify_not_configured");
+  if (!_gymSpotifyClient) {
+    _gymSpotifyClient = new SpotifyClient({
+      clientId: process.env.SPOTIFY_CLIENT_ID,
+      clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+      refreshToken: process.env.SPOTIFY_GYM_REFRESH_TOKEN,
+    });
+  }
+  if (!_gymSpotifyClient.accessToken) {
+    await _gymSpotifyClient.authenticate();
+  }
+  try {
+    return await fn(_gymSpotifyClient);
+  } catch (err) {
+    if (String(err.message).includes("401")) {
+      _gymSpotifyClient.accessToken = null;
+      await _gymSpotifyClient.authenticate();
+      return fn(_gymSpotifyClient);
+    }
+    throw err;
+  }
+}
+
+app.get("/checkin/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  res.write(": connected\n\n");
+
+  checkinClients.add(res);
+
+  const keepalive = setInterval(() => {
+    try { res.write(": keepalive\n\n"); } catch (_) { clearInterval(keepalive); }
+  }, 25000);
+
+  req.on("close", () => {
+    checkinClients.delete(res);
+    clearInterval(keepalive);
+  });
+});
+
+app.get("/checkin/sdk-token", async (_req, res) => {
+  if (!hasGymSpotify) {
+    res.status(503).json({ error: "gym_spotify_not_configured" });
+    return;
+  }
+  try {
+    await withGymSpotify((client) => {
+      res.json({ token: client.accessToken });
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.get("/api/checkin/volume/ramp/:pct", (req, res) => {
+  const targetPct = clampPct(req.params.pct);
+  const duration = Math.max(100, Number.parseInt(req.query.duration, 10) || 1200);
+  broadcastCheckin("rampVolume", { targetPct, duration });
+  res.json({ ok: true, targetPct, duration });
+});
+
+app.get("/api/checkin/volume/:pct", (req, res) => {
+  const pct = clampPct(req.params.pct);
+  broadcastCheckin("setVolume", { pct });
+  res.json({ ok: true, pct });
+});
+
 app.get("/api/spotify/volume", async (_req, res) => {
   if (!hasSpotify) {
     res.status(503).json({ error: "spotify_not_configured" });
@@ -535,6 +623,24 @@ app.get(/.*/, (_req, res) => {
   res.setHeader("Cache-Control", "no-store, must-revalidate");
   res.sendFile(path.join(distDir, "index.html"));
 });
+
+const TZ = "America/Argentina/Buenos_Aires";
+
+// :45 → baja a 50% por 5 seg, vuelve a 90%
+cron.schedule("45 * * * *", () => {
+  broadcastCheckin("rampVolume", { targetPct: 50, duration: 1200 });
+  setTimeout(() => broadcastCheckin("rampVolume", { targetPct: 90, duration: 1200 }), 6200);
+}, { timezone: TZ });
+
+// :55 → baja a 50%
+cron.schedule("55 * * * *", () => {
+  broadcastCheckin("rampVolume", { targetPct: 50, duration: 1200 });
+}, { timezone: TZ });
+
+// :08 → sube a 90%
+cron.schedule("8 * * * *", () => {
+  broadcastCheckin("rampVolume", { targetPct: 90, duration: 1200 });
+}, { timezone: TZ });
 
 initDb()
   .then(() => {

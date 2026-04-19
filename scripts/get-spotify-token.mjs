@@ -19,6 +19,9 @@ const scope = [
   "user-top-read",
   "user-read-playback-state",
   "user-modify-playback-state",
+  "streaming",
+  "user-read-private",
+  "user-read-email",
 ].join(" ");
 
 const authorizeUrl = new URL("https://accounts.spotify.com/authorize");
