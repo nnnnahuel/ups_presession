@@ -2,12 +2,23 @@
 title UP.S Screen Worker
 cd /d "%~dp0"
 
-if "%APP_BASE_URL%"=="" (
-  echo Missing APP_BASE_URL.
+if "%DEVICE_ID%"=="" (
+  echo Missing DEVICE_ID.
   echo Example:
-  echo set APP_BASE_URL=https://equipo.up-s.ar
+  echo set DEVICE_ID=gym1-pc1
   exit /b 1
 )
 
-echo Starting screen worker against %APP_BASE_URL%
+if "%LOCATION_ID%"=="" (
+  echo Missing LOCATION_ID.
+  echo Example:
+  echo set LOCATION_ID=gym1
+  exit /b 1
+)
+
+if "%SERVER_URL%"=="" (
+  set SERVER_URL=https://equipo.up-s.ar
+)
+
+echo Starting distributed worker %DEVICE_ID% at %LOCATION_ID% against %SERVER_URL%
 node worker.cjs

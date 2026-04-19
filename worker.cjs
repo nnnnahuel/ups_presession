@@ -2,21 +2,28 @@ const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
 
-const BASE_URL = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
-const SCREEN_BASE = (process.env.SCREEN_BASE_PATH || "/screen").replace(/\/+$/, "");
+const DEVICE_ID = process.env.DEVICE_ID;
+const LOCATION_ID = process.env.LOCATION_ID;
+const SERVER_URL = (process.env.SERVER_URL || process.env.APP_BASE_URL || "https://equipo.up-s.ar").replace(/\/+$/, "");
 const WORKER_TOKEN = process.env.WORKER_TOKEN || "";
 const NIRCMD_PATH = process.env.NIRCMD_PATH || "nircmd.exe";
-const POLL_INTERVAL_MS = Math.max(500, Number(process.env.WORKER_POLL_INTERVAL_MS) || 1500);
+const HEARTBEAT_INTERVAL_MS = 5000;
+const COMMAND_POLL_INTERVAL_MS = 2000;
 const STATE_FILE = path.join(__dirname, "worker.state.json");
 
-let state = loadState();
-let currentVolumePct = typeof state.lastKnownPct === "number" ? state.lastKnownPct : null;
+const persistedState = loadState();
+let currentVolumePct = typeof persistedState.lastKnownPct === "number" ? persistedState.lastKnownPct : null;
+let registerInFlight = false;
+let pollInFlight = false;
 
 function loadState() {
   try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    const parsed = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    return {
+      lastKnownPct: typeof parsed.lastKnownPct === "number" ? parsed.lastKnownPct : null,
+    };
   } catch {
-    return { lastCommandId: 0, lastKnownPct: null };
+    return { lastKnownPct: null };
   }
 }
 
@@ -26,7 +33,6 @@ function saveState() {
       STATE_FILE,
       JSON.stringify(
         {
-          lastCommandId: state.lastCommandId,
           lastKnownPct: currentVolumePct,
         },
         null,
@@ -83,14 +89,11 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function apiUrl(pathname) {
-  return `${BASE_URL}${SCREEN_BASE}${pathname}`;
-}
-
 async function setSystemVolume(pct) {
   const targetPct = clampPct(pct);
   await execFileAsync(NIRCMD_PATH, ["setsysvolume", String(pctToSystemVolume(targetPct))]);
   currentVolumePct = targetPct;
+  saveState();
 }
 
 async function muteSystemVolume() {
@@ -123,13 +126,43 @@ async function rampSystemVolume(targetPct, duration, from) {
   }
 }
 
-async function acknowledgeCommand(id, status, errorMessage = null) {
-  const response = await fetch(apiUrl(`/api/worker/commands/${id}/ack`), {
+async function setVolume(value) {
+  await setSystemVolume(value);
+}
+
+async function rampVolume(value) {
+  if (value && typeof value === "object") {
+    await rampSystemVolume(value.targetPct ?? value.pct ?? value.value, value.duration, value.from);
+    return;
+  }
+
+  await rampSystemVolume(value);
+}
+
+async function registerWorker() {
+  const response = await fetch(`${SERVER_URL}/api/worker/register`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
+      device_id: DEVICE_ID,
+      location_id: LOCATION_ID,
+      last_known_volume: currentVolumePct,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Register failed with ${response.status}`);
+  }
+}
+
+async function acknowledgeCommand(commandId, status, errorMessage = null) {
+  const response = await fetch(`${SERVER_URL}/api/commands/${commandId}/ack`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      device_id: DEVICE_ID,
       status,
-      lastKnownPct: currentVolumePct,
+      last_known_volume: currentVolumePct,
       error: errorMessage,
     }),
   });
@@ -139,25 +172,13 @@ async function acknowledgeCommand(id, status, errorMessage = null) {
   }
 }
 
-async function sendHeartbeat() {
-  const response = await fetch(apiUrl("/api/worker/heartbeat"), {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({
-      lastCommandId: state.lastCommandId,
-      lastKnownPct: currentVolumePct,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Heartbeat failed with ${response.status}`);
-  }
-}
-
-async function handleCommand(command) {
+async function executeCommand(command) {
   switch (command.type) {
-    case "setVolume":
-      await setSystemVolume(command.payload?.pct);
+    case "volume":
+      await setVolume(command.value);
+      break;
+    case "volume_ramp":
+      await rampVolume(command.value);
       break;
     case "mute":
       await muteSystemVolume();
@@ -165,64 +186,99 @@ async function handleCommand(command) {
     case "unmute":
       await unmuteSystemVolume();
       break;
-    case "rampVolume":
-      await rampSystemVolume(
-        command.payload?.targetPct,
-        command.payload?.duration,
-        command.payload?.from
-      );
-      break;
     default:
       throw new Error(`Unsupported command type: ${command.type}`);
   }
 }
 
-async function pollOnce() {
-  const response = await fetch(apiUrl(`/api/worker/commands?since=${state.lastCommandId}`), {
-    headers: headers(null),
-  });
+async function fetchCommands() {
+  const response = await fetch(
+    `${SERVER_URL}/api/commands?device_id=${encodeURIComponent(DEVICE_ID)}`,
+    {
+      headers: headers(null),
+    }
+  );
 
   if (!response.ok) {
-    throw new Error(`Poll failed with ${response.status}`);
+    throw new Error(`Command poll failed with ${response.status}`);
   }
 
-  const payload = await response.json();
-  const commands = Array.isArray(payload.commands) ? payload.commands : [];
+  const commands = await response.json();
 
-  for (const command of commands) {
+  for (const command of Array.isArray(commands) ? commands : []) {
+    let executionError = null;
+
     try {
-      await handleCommand(command);
-      state.lastCommandId = Math.max(state.lastCommandId, command.id);
-      saveState();
-      await acknowledgeCommand(command.id, "ok");
+      await executeCommand(command);
       console.log(`Command ${command.id} (${command.type}) executed`);
     } catch (error) {
-      state.lastCommandId = Math.max(state.lastCommandId, command.id);
-      saveState();
-      await acknowledgeCommand(command.id, "error", error.message);
+      executionError = error;
       console.error(`Command ${command.id} failed:`, error.message);
     }
+
+    try {
+      await acknowledgeCommand(
+        command.id,
+        executionError ? "error" : "ok",
+        executionError ? executionError.message : null
+      );
+    } catch (ackError) {
+      console.error(`Command ${command.id} ack failed:`, ackError.message);
+    }
+  }
+}
+
+async function safeRegister() {
+  if (registerInFlight) {
+    return;
   }
 
-  await sendHeartbeat();
+  registerInFlight = true;
+  try {
+    await registerWorker();
+  } catch (error) {
+    console.error("Worker register error:", error.message);
+  } finally {
+    registerInFlight = false;
+  }
+}
+
+async function safePoll() {
+  if (pollInFlight) {
+    return;
+  }
+
+  pollInFlight = true;
+  try {
+    await fetchCommands();
+  } catch (error) {
+    console.error("Worker poll error:", error.message);
+  } finally {
+    pollInFlight = false;
+  }
 }
 
 async function main() {
-  if (!BASE_URL) {
-    throw new Error("Missing APP_BASE_URL environment variable");
+  if (!DEVICE_ID) {
+    throw new Error("Missing DEVICE_ID environment variable");
   }
 
-  console.log(`Worker polling ${apiUrl("")} every ${POLL_INTERVAL_MS}ms`);
-
-  while (true) {
-    try {
-      await pollOnce();
-    } catch (error) {
-      console.error("Worker loop error:", error.message);
-    }
-
-    await sleep(POLL_INTERVAL_MS);
+  if (!LOCATION_ID) {
+    throw new Error("Missing LOCATION_ID environment variable");
   }
+
+  console.log(`Worker ${DEVICE_ID} (${LOCATION_ID}) connected to ${SERVER_URL}`);
+
+  await safeRegister();
+  await safePoll();
+
+  setInterval(() => {
+    void safeRegister();
+  }, HEARTBEAT_INTERVAL_MS);
+
+  setInterval(() => {
+    void safePoll();
+  }, COMMAND_POLL_INTERVAL_MS);
 }
 
 main().catch((error) => {
