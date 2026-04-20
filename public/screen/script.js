@@ -35,14 +35,6 @@ function showRealTime() {
 
   document.getElementById('timer').textContent = `${hrs}:${mins}`;
 
-  // Día (M1-M7)
-  const dayLabels = ["M1", "M2", "M3", "M4", "M5", "M6", "M7"];
-  const day = now.getDay();
-  const label = dayLabels[day === 0 ? 6 : day - 1];
-
-  const block = document.getElementById('block-name');
-  block.textContent = label;
-
   // Flash sutil cada minuto
   if (secs === "00") {
     document.body.classList.add('flash');

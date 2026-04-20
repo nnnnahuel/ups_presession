@@ -10,9 +10,8 @@
 html, body {
   width: 100%;
   height: 100%;
-  background: #000;
-  color: #fff;
   overflow: hidden;
+  color: #fff;
 }
 
 /* ===== LAYOUT BASE ===== */
@@ -21,6 +20,17 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 80px 100px;
+  background: radial-gradient(ellipse at 28% 50%, #111 0%, #000 60%);
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  bottom: 38px;
+  left: 100px;
+  right: 100px;
+  height: 1px;
+  background: rgba(255,255,255,0.07);
 }
 
 /* ===== LEFT ===== */
@@ -28,61 +38,65 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 20px;
 }
 
-/* M1 (SEPARADO ARRIBA, NUNCA SE PISA) */
-#block-name {
-  font-family: 'Industry W00 Bold', sans-serif;
-  font-size: 38px;
-  opacity: 0.35;
-  letter-spacing: 0.1em;
-
-  position: relative;
-  top: -40px; /* lo sube visualmente sin pisar */
-}
-
-/* ===== TIMER (AGRANDADO) ===== */
+/* ===== TIMER ===== */
 #timer {
   font-family: 'DS-Digital', monospace;
-  font-size: 520px; /* 🔥 MÁS GRANDE */
+  font-size: 640px;
   letter-spacing: -0.08em;
   line-height: 0.8;
   font-weight: 700;
 
   text-shadow:
-    0 0 6px rgba(255,255,255,0.7),
-    0 0 25px rgba(255,255,255,0.25);
+    0 0 4px rgba(255,255,255,1),
+    0 0 22px rgba(255,255,255,0.55),
+    0 0 70px rgba(255,255,255,0.15);
 
   animation: breathe 6s ease-in-out infinite;
+}
+
+/* ===== DIVIDER ===== */
+#divider {
+  width: 1px;
+  height: 55vh;
+  flex-shrink: 0;
+  align-self: center;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(255,255,255,0.13) 25%,
+    rgba(255,255,255,0.13) 75%,
+    transparent 100%
+  );
 }
 
 /* ===== RIGHT ===== */
 #right {
   display: flex;
-  align-items: center; /* 🔥 CLAVE: alinea con el reloj */
+  align-items: center;
 }
 
 /* ===== FRASE ===== */
 .phrase {
   display: flex;
   flex-direction: column;
-  justify-content: center; /* 🔥 centra verticalmente */
+  justify-content: center;
   align-items: flex-end;
   line-height: 0.85;
 }
 
 .phrase span {
   font-family: 'Industry W00 Bold', sans-serif;
-  font-size: 180px; /* un poco más grande también */
+  font-size: 180px;
   letter-spacing: -0.04em;
 
   text-shadow:
     0 0 6px rgba(255,255,255,0.5),
-    0 0 20px rgba(255,255,255,0.2);
+    0 0 28px rgba(255,255,255,0.18);
 }
 
-/* ===== MICRO ANIMACIONES ===== */
+/* ===== ANIMACIONES ===== */
 @keyframes breathe {
   0%,100% { transform: scale(1); }
   50% { transform: scale(1.015); }
