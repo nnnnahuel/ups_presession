@@ -21,7 +21,6 @@ const pickRandom = arr => arr[Math.floor(Math.random() * arr.length)];
 // ====== CLOCK MODE ======
 let clockInterval;
 
-// flags
 let last45Hour = null;
 let last55Hour = null;
 let last08Hour = null;
@@ -35,12 +34,9 @@ function showRealTime() {
 
   document.getElementById('timer').textContent = `${hrs}:${mins}`;
 
-  // Flash sutil cada minuto
   if (secs === "00") {
     document.body.classList.add('flash');
-    setTimeout(() => {
-      document.body.classList.remove('flash');
-    }, 120);
+    setTimeout(() => document.body.classList.remove('flash'), 120);
   }
 }
 
@@ -93,31 +89,19 @@ function checkHourlyEvents() {
   const m = now.getMinutes();
   const s = now.getSeconds();
 
-  // 45:00 → aviso 10 min
   if (m === 45 && s === 0 && last45Hour !== h) {
     last45Hour = h;
-
     fetch(screenPath('/volume/ramp/50?duration=1200&from=88'));
-    setTimeout(() => {
-      speakMessage(pickRandom(tenMinMessages));
-    }, 400);
-
-    setTimeout(() => {
-      fetch(screenPath('/volume/ramp/88?duration=1200'));
-    }, 6000);
+    setTimeout(() => speakMessage(pickRandom(tenMinMessages)), 400);
+    setTimeout(() => fetch(screenPath('/volume/ramp/88?duration=1200')), 6000);
   }
 
-  // 55:00 → cierre
   if (m === 55 && s === 0 && last55Hour !== h) {
     last55Hour = h;
-
     fetch(screenPath('/volume/ramp/50?duration=1200&from=88'));
-    setTimeout(() => {
-      speakMessage(pickRandom(sessionEndMessages));
-    }, 400);
+    setTimeout(() => speakMessage(pickRandom(sessionEndMessages)), 400);
   }
 
-  // 08:00 → volumen normal
   if (m === 8 && s === 0 && last08Hour !== h) {
     last08Hour = h;
     fetch(screenPath('/volume/ramp/88?duration=1200'));

@@ -1532,7 +1532,7 @@ app.use(
       }
 
       if (/\.(js|css|png|jpg|jpeg|svg|webp|ico|mp3)$/i.test(filePath)) {
-        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        res.setHeader("Cache-Control", "no-store, must-revalidate");
       }
     },
   })
