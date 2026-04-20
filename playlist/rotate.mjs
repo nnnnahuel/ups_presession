@@ -62,11 +62,9 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
     }
 
     const playlistItems = await spotify.getPlaylistItems(config.MAIN_PLAYLIST_ID);
-    const archiveItems = await spotify.getPlaylistItems(config.ARCHIVE_PLAYLIST_ID);
-    const pausadasItems = await spotify.getPlaylistItems(config.PAUSADAS_PLAYLIST_ID);
+    const pausadasItems = await spotify.getPlaylistItems(config.ARCHIVE_PLAYLIST_ID);
 
     result.details.playlistSizeBefore = playlistItems.length;
-    result.details.archiveSizeBefore = archiveItems.length;
     result.details.pausadasSizeBefore = pausadasItems.length;
 
     const selection = selectTracksForRemoval(
@@ -85,19 +83,19 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
     }
 
     const currentUris = new Set(playlistItems.map((item) => item.track.uri));
-    const archiveUris = new Set(archiveItems.map((item) => item.track.uri));
-    const excludeTrackKeys = new Set([
-      ...playlistItems.map((item) => buildTrackKey(item.track.name, item.track.artists[0]?.name)),
-      ...archiveItems.map((item) => buildTrackKey(item.track.name, item.track.artists[0]?.name)),
-    ]);
+    const pausadasUris = new Set(pausadasItems.map((item) => item.track.uri));
+    // Only exclude from main — pausadas IS the source, not a disqualifier
+    const excludeTrackKeys = new Set(
+      playlistItems.map((item) => buildTrackKey(item.track.name, item.track.artists[0]?.name))
+    );
 
     await purgeOldHistory(pool, config.COOLDOWN_DAYS);
     const cooldownUris = await getCooldownUris(pool, config.COOLDOWN_DAYS);
-    const excludeUris = new Set([...currentUris, ...archiveUris, ...cooldownUris]);
+    const excludeUris = new Set([...currentUris, ...cooldownUris]);
 
     const targetAddCount = selection.toRemove.length || config.ROTATION_COUNT;
 
-    // Pick from "pausadas": oldest first, skip already-present or cooldown tracks
+    // Pick oldest eligible tracks from pausadas
     const pausadasCandidates = pausadasItems
       .filter((item) => {
         if (!item.track) return false;
@@ -123,12 +121,13 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
     if (!dryRun) {
       if (selection.toRemove.length) {
         const removedUris = selection.toRemove.map((item) => item.track.uri);
-        const archiveInsertUris = removedUris.filter((uri) => !archiveUris.has(uri));
+        // Add removed tracks to pausadas (dedup: skip if already there)
+        const toArchive = removedUris.filter((uri) => !pausadasUris.has(uri));
 
-        result.details.archiveInsertCount = archiveInsertUris.length;
+        result.details.pausadasInsertCount = toArchive.length;
 
-        if (archiveInsertUris.length) {
-          await spotify.addToPlaylist(config.ARCHIVE_PLAYLIST_ID, archiveInsertUris);
+        if (toArchive.length) {
+          await spotify.addToPlaylist(config.ARCHIVE_PLAYLIST_ID, toArchive);
         }
 
         await spotify.removeFromPlaylist(config.MAIN_PLAYLIST_ID, removedUris);
@@ -140,7 +139,7 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
         const urisToAdd = pausadasCandidates.map((item) => item.track.uri);
 
         await spotify.addToPlaylist(config.MAIN_PLAYLIST_ID, urisToAdd);
-        await spotify.removeFromPlaylist(config.PAUSADAS_PLAYLIST_ID, urisToAdd);
+        await spotify.removeFromPlaylist(config.ARCHIVE_PLAYLIST_ID, urisToAdd);
         result.added = urisToAdd.length;
       }
     } else {
@@ -176,7 +175,6 @@ export function readPlaylistConfig() {
     "SPOTIFY_REFRESH_TOKEN",
     "SPOTIFY_MAIN_PLAYLIST_ID",
     "SPOTIFY_ARCHIVE_PLAYLIST_ID",
-    "SPOTIFY_PAUSADAS_PLAYLIST_ID",
   ];
 
   for (const key of required) {
@@ -188,7 +186,6 @@ export function readPlaylistConfig() {
   return {
     MAIN_PLAYLIST_ID: process.env.SPOTIFY_MAIN_PLAYLIST_ID,
     ARCHIVE_PLAYLIST_ID: process.env.SPOTIFY_ARCHIVE_PLAYLIST_ID,
-    PAUSADAS_PLAYLIST_ID: process.env.SPOTIFY_PAUSADAS_PLAYLIST_ID,
     ROTATION_COUNT: parseInteger(process.env.PLAYLIST_ROTATION_COUNT, 5),
     MIN_PLAYLIST_SIZE: parseInteger(process.env.PLAYLIST_MIN_PLAYLIST_SIZE, 40),
     COOLDOWN_DAYS: parseInteger(process.env.PLAYLIST_COOLDOWN_DAYS, 45),
