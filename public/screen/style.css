@@ -13,7 +13,6 @@ html, body {
   background: #000;
   color: #fff;
   overflow: hidden;
-  font-family: sans-serif;
 }
 
 /* LAYOUT */
@@ -21,21 +20,23 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 60px 80px;
+  padding: 80px 100px;
 }
 
-/* LEFT SIDE */
+/* LEFT */
 #left {
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 
-/* M1 */
+/* M1 (ahora separado y limpio) */
 #block-name {
   font-family: 'Industry W00 Bold', sans-serif;
-  font-size: 48px;
-  opacity: 0.5;
-  margin-bottom: 20px;
+  font-size: 42px;
+  opacity: 0.35;
+  letter-spacing: 0.08em;
+  margin-bottom: 30px;
 }
 
 /* TIMER */
@@ -43,17 +44,23 @@ body {
   font-family: 'DS-Digital', monospace;
   font-size: 420px;
   letter-spacing: -0.08em;
-  line-height: 0.9;
+  line-height: 0.85;
   font-weight: 700;
+
+  text-shadow:
+    0 0 6px rgba(255,255,255,0.6),
+    0 0 20px rgba(255,255,255,0.25);
+
+  animation: breathe 6s ease-in-out infinite;
 }
 
-/* RIGHT SIDE */
+/* RIGHT */
 #right {
   display: flex;
   align-items: center;
 }
 
-/* PHRASE */
+/* FRASE */
 .phrase {
   display: flex;
   flex-direction: column;
@@ -63,22 +70,28 @@ body {
 
 .phrase span {
   font-family: 'Industry W00 Bold', sans-serif;
-  font-size: 160px;
+  font-size: 150px;
   letter-spacing: -0.04em;
+
+  text-shadow:
+    0 0 6px rgba(255,255,255,0.5),
+    0 0 18px rgba(255,255,255,0.2);
 }
 
-/* SUBTLE TEXT SHARPNESS */
-#timer,
-.phrase span {
-  text-shadow: 0 0 4px rgba(255,255,255,0.4);
-}
+/* MICRO ANIMACIONES */
 
-/* MICRO BREATH ANIMATION */
+/* respiración */
 @keyframes breathe {
   0%,100% { transform: scale(1); }
-  50% { transform: scale(1.01); }
+  50% { transform: scale(1.015); }
 }
 
-#timer {
-  animation: breathe 4s ease-in-out infinite;
+/* flash minuto */
+.flash {
+  animation: flashAnim 0.12s ease;
+}
+
+@keyframes flashAnim {
+  0% { opacity: 0.85; }
+  100% { opacity: 1; }
 }
