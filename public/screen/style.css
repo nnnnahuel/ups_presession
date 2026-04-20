@@ -15,7 +15,7 @@ html, body {
   overflow: hidden;
 }
 
-/* LAYOUT */
+/* ===== LAYOUT BASE ===== */
 body {
   display: flex;
   justify-content: space-between;
@@ -23,70 +23,71 @@ body {
   padding: 80px 100px;
 }
 
-/* LEFT */
+/* ===== LEFT ===== */
 #left {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  gap: 20px;
 }
 
-/* M1 (ahora separado y limpio) */
+/* M1 (SEPARADO ARRIBA, NUNCA SE PISA) */
 #block-name {
   font-family: 'Industry W00 Bold', sans-serif;
-  font-size: 42px;
+  font-size: 38px;
   opacity: 0.35;
-  letter-spacing: 0.08em;
-  margin-bottom: 30px;
+  letter-spacing: 0.1em;
+
+  position: relative;
+  top: -40px; /* lo sube visualmente sin pisar */
 }
 
-/* TIMER */
+/* ===== TIMER (AGRANDADO) ===== */
 #timer {
   font-family: 'DS-Digital', monospace;
-  font-size: 420px;
+  font-size: 520px; /* 🔥 MÁS GRANDE */
   letter-spacing: -0.08em;
-  line-height: 0.85;
+  line-height: 0.8;
   font-weight: 700;
 
   text-shadow:
-    0 0 6px rgba(255,255,255,0.6),
-    0 0 20px rgba(255,255,255,0.25);
+    0 0 6px rgba(255,255,255,0.7),
+    0 0 25px rgba(255,255,255,0.25);
 
   animation: breathe 6s ease-in-out infinite;
 }
 
-/* RIGHT */
+/* ===== RIGHT ===== */
 #right {
   display: flex;
-  align-items: center;
+  align-items: center; /* 🔥 CLAVE: alinea con el reloj */
 }
 
-/* FRASE */
+/* ===== FRASE ===== */
 .phrase {
   display: flex;
   flex-direction: column;
+  justify-content: center; /* 🔥 centra verticalmente */
   align-items: flex-end;
   line-height: 0.85;
 }
 
 .phrase span {
   font-family: 'Industry W00 Bold', sans-serif;
-  font-size: 150px;
+  font-size: 180px; /* un poco más grande también */
   letter-spacing: -0.04em;
 
   text-shadow:
     0 0 6px rgba(255,255,255,0.5),
-    0 0 18px rgba(255,255,255,0.2);
+    0 0 20px rgba(255,255,255,0.2);
 }
 
-/* MICRO ANIMACIONES */
-
-/* respiración */
+/* ===== MICRO ANIMACIONES ===== */
 @keyframes breathe {
   0%,100% { transform: scale(1); }
   50% { transform: scale(1.015); }
 }
 
-/* flash minuto */
 .flash {
   animation: flashAnim 0.12s ease;
 }
