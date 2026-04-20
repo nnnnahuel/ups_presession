@@ -1,186 +1,84 @@
 @import url('https://fonts.cdnfonts.com/css/ds-digital');
 @import url('https://db.onlinewebfonts.com/c/b8e20323f8f36e06f87745c93c45afcd?family=Industry+W00+Bold');
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
 html, body {
   width: 100%;
   height: 100%;
-  background:
-    radial-gradient(circle at -200px -200px, rgba(255,255,255,0.12) 0%, transparent 60%),
-    radial-gradient(circle at 95% 95%, rgba(255,255,255,0.08) 0%, transparent 80%),
-    #000;
+  background: #000;
+  color: #fff;
   overflow: hidden;
-  position: relative;
-  filter: contrast(1.1) saturate(1.2);
+  font-family: sans-serif;
 }
 
-body::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  pointer-events: none;
-  background: radial-gradient(circle at center, transparent 70%, rgba(0,0,0,0.6));
-  z-index: 1;
-}
-
-body::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: repeating-linear-gradient(transparent 0px, transparent 2px, rgba(255,255,255,0.02) 3px);
-  pointer-events: none;
-  z-index: 2;
-}
-
-#block-name {
-  position: absolute;
-  top: 35px;
-  left: 60px;
-  font-family: 'Industry W00 Bold', sans-serif;
-  font-size: 70px;
-  font-weight: 1000;
-  letter-spacing: 0.03em;
-  color: #fff;
-  text-shadow:
-    0 0 8px rgba(255,255,255,0.7),
-    0 0 16px rgba(255,255,255,0.5);
-  z-index: 3;
-  transition: all 0.3s ease;
-}
-
-body.clock-mode #block-name.f-day {
-  animation: pulseJump 1.2s infinite;
-  text-shadow:
-    0 0 8px rgba(255,255,255,0.7),
-    0 0 20px rgba(255,255,255,0.4);
-}
-
-@keyframes pulseJump {
-  0%, 100% { transform: translateY(0px) scale(1); }
-  50%      { transform: translateY(-2px) scale(1.08); }
-}
-
-#timer-wrap {
-  position: absolute;
-  top: 80px;
-  left: 60px;
+/* LAYOUT */
+body {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 30px;
-  z-index: 3;
+  padding: 60px 80px;
 }
 
-#timer {
-  font-family: 'DS-Digital', monospace;
-  font-size: 360px;
-  color: #fff;
-  letter-spacing: -.07em;
-  font-weight: 700;
-  text-shadow:
-    0 0 1px rgba(255, 255, 255, 0.7),
-    0 0 12px rgba(255, 255, 255, 0.4),
-    0 0 28px rgba(255, 255, 255, 0.2);
-  transition: font-size 0.3s ease;
-}
-
-body.timer-mode #timer {
-  font-size: 420px;
-}
-
-.phrase {
-  position: absolute;
-  top: 138px;
-  right: 40px;
+/* LEFT SIDE */
+#left {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+}
+
+/* M1 */
+#block-name {
+  font-family: 'Industry W00 Bold', sans-serif;
+  font-size: 48px;
+  opacity: 0.5;
+  margin-bottom: 20px;
+}
+
+/* TIMER */
+#timer {
+  font-family: 'DS-Digital', monospace;
+  font-size: 420px;
+  letter-spacing: -0.08em;
   line-height: 0.9;
-  z-index: 3;
+  font-weight: 700;
+}
+
+/* RIGHT SIDE */
+#right {
+  display: flex;
+  align-items: center;
+}
+
+/* PHRASE */
+.phrase {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 0.85;
 }
 
 .phrase span {
   font-family: 'Industry W00 Bold', sans-serif;
-  font-size: 145px;
-  font-weight: 1000;
-  color: #fff;
-  letter-spacing: -.01em;
-  word-spacing: -.01em;
-  text-shadow:
-    0 0 6px rgba(255, 255, 255, 0.7),
-    0 0 18px rgba(255, 255, 255, 0.4);
+  font-size: 160px;
+  letter-spacing: -0.04em;
 }
 
-.progress-bar {
-  position: absolute;
-  left: 25%;
-  right: 25%;
-  bottom: 400px;
-  height: 36px;
-  padding: 3px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 2px solid rgba(255,255,255,0.4);
-  clip-path: polygon(
-    15px 0, calc(100% - 15px) 0,
-    100% 15px, 100% calc(100% - 15px),
-    calc(100% - 15px) 100%, 15px 100%,
-    0 calc(100% - 15px), 0 15px
-  );
-  z-index: 3;
-  box-shadow:
-    0 0 8px rgba(255,255,255,0.1),
-    inset 0 0 12px rgba(255,255,255,0.1);
-  opacity: 1;
-  transition: opacity 0.3s ease;
+/* SUBTLE TEXT SHARPNESS */
+#timer,
+.phrase span {
+  text-shadow: 0 0 4px rgba(255,255,255,0.4);
 }
 
-body.clock-mode .progress-bar {
-  opacity: 0.15;
+/* MICRO BREATH ANIMATION */
+@keyframes breathe {
+  0%,100% { transform: scale(1); }
+  50% { transform: scale(1.01); }
 }
 
-.progress {
-  height: 100%;
-  width: 0%;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.6),
-    rgba(200, 200, 255, 0.4),
-    rgba(255, 255, 255, 0.6)
-  );
-  clip-path: inherit;
-  box-shadow:
-    inset 0 0 5px rgba(255,255,255,0.3),
-    0 0 6px rgba(255,255,255,0.1);
-  transition: width 0.3s linear;
+#timer {
+  animation: breathe 4s ease-in-out infinite;
 }
-
-/* Enable Audio Overlay */
-.audio-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0,0,0,0.6);
-  z-index: 9999;
-}
-.audio-overlay .overlay-content {
-  padding: 24px 32px;
-  background: rgba(20,20,20,0.9);
-  border: 1px solid rgba(255,255,255,0.2);
-  box-shadow: 0 8px 40px rgba(0,0,0,0.6), inset 0 0 20px rgba(255,255,255,0.05);
-  border-radius: 10px;
-}
-.audio-overlay button {
-  font-family: 'Industry W00 Bold', sans-serif;
-  font-size: 22px;
-  padding: 12px 20px;
-  color: #000;
-  background: #fff;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.audio-overlay button:hover { filter: brightness(0.9); }

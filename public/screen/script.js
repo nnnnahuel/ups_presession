@@ -96,17 +96,23 @@ function showRealTime() {
   const now = new Date();
   const hrs = String(now.getHours()).padStart(2, '0');
   const mins = String(now.getMinutes()).padStart(2, '0');
+  const secs = String(now.getSeconds()).padStart(2, '0');
+
   document.getElementById('timer').textContent = `${hrs}:${mins}`;
 
+  // Día tipo M1, M2...
   const dayLabels = ["M1", "M2", "M3", "M4", "M5", "M6", "M7"];
   const day = now.getDay();
   const label = dayLabels[day === 0 ? 6 : day - 1];
+  document.getElementById('block-name').textContent = label;
 
-  const blockEl = document.getElementById('block-name');
-  blockEl.textContent = label;
-  blockEl.classList.add('f-day');
-
-  setMode("clock");
+  // FLASH cada minuto exacto
+  if (secs === "00") {
+    document.body.style.opacity = "0.85";
+    setTimeout(() => {
+      document.body.style.opacity = "1";
+    }, 100);
+  }
 }
 
 function startClock() {
