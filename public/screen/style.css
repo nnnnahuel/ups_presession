@@ -25,7 +25,7 @@ body {
 /* ===== TIMER ===== */
 #timer {
   font-family: 'DS-Digital', monospace;
-  font-size: clamp(470px, 50vh, 700px);
+  font-size: clamp(380px, 40vh, 560px);
   letter-spacing: -0.08em;
   line-height: 0.85;
   font-weight: 700;
@@ -39,7 +39,7 @@ body {
   bottom: 55px;
   left: 50%;
   transform: translateX(-50%);
-  width: 160px;
+  width: 240px;
   opacity: 0.8;
 }
 
