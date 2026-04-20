@@ -1,6 +1,4 @@
-import { LastFmClient } from "./lastfm.mjs";
-import { findReplacements } from "./recommender.mjs";
-import { extractSeedData, selectTracksForRemoval } from "./selector.mjs";
+import { selectTracksForRemoval } from "./selector.mjs";
 import { SpotifyClient } from "./spotify.mjs";
 import {
   getCooldownUris,
@@ -21,9 +19,6 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
     clientId: process.env.SPOTIFY_CLIENT_ID,
     clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
     refreshToken: process.env.SPOTIFY_REFRESH_TOKEN,
-  });
-  const lastfm = new LastFmClient({
-    apiKey: process.env.LASTFM_API_KEY,
   });
 
   const result = {
@@ -68,9 +63,11 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
 
     const playlistItems = await spotify.getPlaylistItems(config.MAIN_PLAYLIST_ID);
     const archiveItems = await spotify.getPlaylistItems(config.ARCHIVE_PLAYLIST_ID);
+    const pausadasItems = await spotify.getPlaylistItems(config.PAUSADAS_PLAYLIST_ID);
 
     result.details.playlistSizeBefore = playlistItems.length;
     result.details.archiveSizeBefore = archiveItems.length;
+    result.details.pausadasSizeBefore = pausadasItems.length;
 
     const selection = selectTracksForRemoval(
       playlistItems,
@@ -98,36 +95,30 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
     const cooldownUris = await getCooldownUris(pool, config.COOLDOWN_DAYS);
     const excludeUris = new Set([...currentUris, ...archiveUris, ...cooldownUris]);
 
-    const seedSource =
-      selection.toRemove.length > 0
-        ? selection.toRemove
-        : playlistItems
-            .slice()
-            .sort((left, right) => {
-              return new Date(left.added_at).getTime() - new Date(right.added_at).getTime();
-            })
-            .slice(0, Math.min(config.ROTATION_COUNT, playlistItems.length));
-
-    const { tracks: seedTracks, artistNames: seedArtists } = extractSeedData(seedSource);
     const targetAddCount = selection.toRemove.length || config.ROTATION_COUNT;
 
-    const replacementResult = await findReplacements({
-      spotify,
-      lastfm,
-      seedTracks,
-      seedArtists,
-      excludeUris,
-      excludeTrackKeys,
-      count: targetAddCount,
-      config,
-    });
+    // Pick from "pausadas": oldest first, skip already-present or cooldown tracks
+    const pausadasCandidates = pausadasItems
+      .filter((item) => {
+        if (!item.track) return false;
+        if (excludeUris.has(item.track.uri)) return false;
+        const key = buildTrackKey(item.track.name, item.track.artists[0]?.name);
+        if (excludeTrackKeys.has(key)) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(a.added_at) - new Date(b.added_at))
+      .slice(0, targetAddCount);
 
-    result.fallbackUsed = replacementResult.fallbackUsed;
     result.details.removedCandidates = selection.toRemove.map(formatPlaylistItem);
-    result.details.addedCandidates = replacementResult.tracks.map(formatTrack);
+    result.details.addedCandidates = pausadasCandidates.map(formatPlaylistItem);
     result.details.cooldownCount = cooldownUris.size;
-    result.details.replacementCount = replacementResult.tracks.length;
-    result.details.replacementUris = replacementResult.tracks.map((track) => track.uri || null);
+    result.details.replacementCount = pausadasCandidates.length;
+
+    if (pausadasCandidates.length < targetAddCount) {
+      logger.warn(
+        `[playlist] pausadas only has ${pausadasCandidates.length} eligible tracks, wanted ${targetAddCount}`
+      );
+    }
 
     if (!dryRun) {
       if (selection.toRemove.length) {
@@ -145,23 +136,16 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
         result.removed = removedUris.length;
       }
 
-      if (replacementResult.tracks.length) {
-        const replacementUris = replacementResult.tracks
-          .map((track) => track.uri)
-          .filter((uri) => typeof uri === "string" && uri.startsWith("spotify:track:"));
+      if (pausadasCandidates.length) {
+        const urisToAdd = pausadasCandidates.map((item) => item.track.uri);
 
-        result.details.validReplacementUriCount = replacementUris.length;
-
-        if (!replacementUris.length) {
-          throw new Error("No valid Spotify track URIs found for replacements.");
-        }
-
-        await spotify.addToPlaylist(config.MAIN_PLAYLIST_ID, replacementUris);
-        result.added = replacementUris.length;
+        await spotify.addToPlaylist(config.MAIN_PLAYLIST_ID, urisToAdd);
+        await spotify.removeFromPlaylist(config.PAUSADAS_PLAYLIST_ID, urisToAdd);
+        result.added = urisToAdd.length;
       }
     } else {
       result.removed = selection.toRemove.length;
-      result.added = replacementResult.tracks.length;
+      result.added = pausadasCandidates.length;
     }
 
     result.details.playlistSizeAfterEstimate =
@@ -190,9 +174,9 @@ export function readPlaylistConfig() {
     "SPOTIFY_CLIENT_ID",
     "SPOTIFY_CLIENT_SECRET",
     "SPOTIFY_REFRESH_TOKEN",
-    "LASTFM_API_KEY",
     "SPOTIFY_MAIN_PLAYLIST_ID",
     "SPOTIFY_ARCHIVE_PLAYLIST_ID",
+    "SPOTIFY_PAUSADAS_PLAYLIST_ID",
   ];
 
   for (const key of required) {
@@ -204,30 +188,15 @@ export function readPlaylistConfig() {
   return {
     MAIN_PLAYLIST_ID: process.env.SPOTIFY_MAIN_PLAYLIST_ID,
     ARCHIVE_PLAYLIST_ID: process.env.SPOTIFY_ARCHIVE_PLAYLIST_ID,
-    ROTATION_COUNT: parseInteger(process.env.PLAYLIST_ROTATION_COUNT, 10),
+    PAUSADAS_PLAYLIST_ID: process.env.SPOTIFY_PAUSADAS_PLAYLIST_ID,
+    ROTATION_COUNT: parseInteger(process.env.PLAYLIST_ROTATION_COUNT, 5),
     MIN_PLAYLIST_SIZE: parseInteger(process.env.PLAYLIST_MIN_PLAYLIST_SIZE, 40),
     COOLDOWN_DAYS: parseInteger(process.env.PLAYLIST_COOLDOWN_DAYS, 45),
-    EXPLICIT_PENALTY: parseFloatValue(process.env.PLAYLIST_EXPLICIT_PENALTY, 0.3),
-    TRACK_SIMILAR_BONUS: parseFloatValue(process.env.PLAYLIST_TRACK_SIMILAR_BONUS, 1.2),
-    LASTFM_SIMILAR_TRACKS_LIMIT: parseInteger(
-      process.env.PLAYLIST_LASTFM_SIMILAR_TRACKS_LIMIT,
-      15
-    ),
-    LASTFM_SIMILAR_ARTISTS_LIMIT: parseInteger(
-      process.env.PLAYLIST_LASTFM_SIMILAR_ARTISTS_LIMIT,
-      10
-    ),
-    SPOTIFY_SEARCH_LIMIT: parseInteger(process.env.PLAYLIST_SPOTIFY_SEARCH_LIMIT, 10),
   };
 }
 
 function parseInteger(value, fallback) {
   const parsed = Number.parseInt(value || "", 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function parseFloatValue(value, fallback) {
-  const parsed = Number.parseFloat(value || "");
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
@@ -237,17 +206,6 @@ function formatPlaylistItem(item) {
     name: item.track.name,
     artist: item.track.artists[0]?.name || "Unknown",
     addedAt: item.added_at,
-    explicit: Boolean(item.track.explicit),
-  };
-}
-
-function formatTrack(track) {
-  return {
-    uri: track.uri,
-    name: track.name,
-    artist: track.artist,
-    score: track.score,
-    explicit: Boolean(track.explicit),
   };
 }
 

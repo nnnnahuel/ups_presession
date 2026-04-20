@@ -19,21 +19,16 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding-top: 7vh;
+  padding-top: 3vh;
 }
 
 /* ===== TIMER ===== */
 #timer {
   font-family: 'DS-Digital', monospace;
-  font-size: clamp(520px, 56vh, 780px);
+  font-size: clamp(470px, 50vh, 700px);
   letter-spacing: -0.08em;
   line-height: 0.85;
   font-weight: 700;
-
-  text-shadow:
-    0 0 4px rgba(255,255,255,1),
-    0 0 22px rgba(255,255,255,0.55),
-    0 0 70px rgba(255,255,255,0.15);
 
   animation: breathe 6s ease-in-out infinite;
 }
@@ -44,7 +39,7 @@ body {
   bottom: 55px;
   left: 50%;
   transform: translateX(-50%);
-  width: 100px;
+  width: 160px;
   opacity: 0.8;
 }
 
