@@ -7,116 +7,25 @@
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script src="https://sdk.scdn.co/spotify-player.js"></script>
     <style>
-      :root {
-        color-scheme: dark;
-      }
+      :root { color-scheme: dark; }
 
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
 
       body {
-        margin: 0;
         font-family: Inter, Arial, sans-serif;
-        background: #09090b;
-        color: #f4f4f5;
-      }
-
-      .page {
-        min-height: 100vh;
-        padding: 8px;
-      }
-
-      .card {
-        width: 100%;
-        max-width: none;
-        min-height: calc(100vh - 16px);
-        background: #18181b;
-        border: 1px solid #27272a;
-        border-radius: 20px;
-        padding: 16px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
-      }
-
-      .eyebrow {
-        font-size: 12px;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: #a1a1aa;
-        margin-bottom: 8px;
-      }
-
-      h1 {
-        margin: 0 0 8px 0;
-        font-size: 34px;
-        line-height: 1.05;
-      }
-
-      .muted {
-        color: #a1a1aa;
-        margin-bottom: 18px;
-      }
-
-      .actions {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-bottom: 18px;
-      }
-
-      button,
-      input,
-      select {
-        font: inherit;
-      }
-
-      button {
-        border: 0;
-        border-radius: 12px;
-        padding: 14px 18px;
-        cursor: pointer;
-        transition: 0.18s ease;
-      }
-
-      .primary {
-        background: #f4f4f5;
-        color: #09090b;
-      }
-
-      .primary:hover {
-        background: #e4e4e7;
-      }
-
-      .secondary {
-        background: #27272a;
-        color: #f4f4f5;
-      }
-
-      .secondary:hover {
-        background: #323238;
-      }
-
-      .reader-wrap {
-        position: relative;
-        background: #09090b;
-        border: 1px solid #27272a;
-        border-radius: 16px;
-        padding: 10px;
-      }
-
-      .camera-layout {
-        display: grid;
-        grid-template-columns: 360px minmax(0, 1fr);
-        gap: 12px;
-        align-items: stretch;
-      }
-
-      #reader {
-        position: relative;
-        overflow: hidden;
-        border-radius: 12px;
         background: #000;
-        aspect-ratio: 16 / 9;
+        color: #f4f4f5;
+        overflow: hidden;
+        height: 100vh;
+        width: 100vw;
+      }
+
+      /* ── CAMERA FULL SCREEN ── */
+      #reader {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        background: #000;
       }
 
       #readerVideo {
@@ -124,7 +33,6 @@
         height: 100%;
         object-fit: cover;
         display: block;
-        background: #000;
       }
 
       .overlay {
@@ -136,62 +44,126 @@
       }
 
       .overlay-box {
-        width: min(58vw, 290px);
+        width: min(38vw, 300px);
         aspect-ratio: 1;
-        border: 4px solid rgba(255, 255, 255, 0.88);
+        border: 3px solid rgba(255,255,255,0.85);
         border-radius: 16px;
-        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.12);
+        box-shadow: 0 0 0 9999px rgba(0,0,0,0.08);
       }
 
+      /* ── TOP BAR WIDGET ── */
+      .top-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 20px;
+        background: rgba(0,0,0,0.55);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+      }
+
+      .eyebrow {
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #71717a;
+        flex-shrink: 0;
+      }
+
+      .scan-hint {
+        flex: 1;
+        font-size: 15px;
+        color: #d4d4d8;
+        letter-spacing: -0.01em;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      button, input, select { font: inherit; }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 16px;
+        cursor: pointer;
+        transition: 0.15s ease;
+        font-size: 14px;
+      }
+
+      .primary {
+        background: rgba(244,244,245,0.92);
+        color: #09090b;
+      }
+      .primary:hover { background: #f4f4f5; }
+
+      .secondary {
+        background: rgba(39,39,42,0.85);
+        color: #f4f4f5;
+        border: 1px solid rgba(255,255,255,0.1);
+      }
+      .secondary:hover { background: rgba(55,55,60,0.9); }
+
+      /* ── BOTTOM UI ── */
+      .bottom-ui {
+        position: fixed;
+        left: 14px;
+        right: 14px;
+        bottom: 14px;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .panels-row {
+        display: flex;
+        gap: 8px;
+      }
+
+      /* ── STATUS ── */
       .status {
-        margin-top: 16px;
-        min-height: 160px;
+        min-height: 76px;
         display: flex;
         align-items: center;
         justify-content: center;
         text-align: center;
-        padding: 22px;
-        border-radius: 18px;
-        border: 1px solid #27272a;
-        background: #09090b;
-        font-size: clamp(28px, 5vw, 54px);
+        padding: 16px 22px;
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(9,9,11,0.72);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        font-size: clamp(22px, 3.8vw, 52px);
         font-weight: 800;
         line-height: 1.05;
         letter-spacing: -0.04em;
         transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
       }
 
-      .status.is-flash {
-        transform: scale(1.01);
-      }
+      .status.is-flash { transform: scale(1.01); }
 
-      .ok {
-        border-color: #14532d;
-        background: #052e16;
-        color: #dcfce7;
-      }
+      .ok   { border-color: #14532d; background: rgba(5,46,22,0.88);  color: #dcfce7; }
+      .warn { border-color: #854d0e; background: rgba(66,32,6,0.88);  color: #fde68a; }
+      .err  { border-color: #7f1d1d; background: rgba(69,10,10,0.88); color: #fecaca; }
 
-      .warn {
-        border-color: #854d0e;
-        background: #422006;
-        color: #fde68a;
-      }
-
-      .err {
-        border-color: #7f1d1d;
-        background: #450a0a;
-        color: #fecaca;
-      }
-
-      .tools {
-        margin-top: 12px;
-      }
-
+      /* ── PANELS ── */
       .panel {
-        margin-top: 12px;
-        border: 1px solid #27272a;
-        border-radius: 16px;
-        background: #111114;
+        flex: 1;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 14px;
+        background: rgba(15,15,18,0.82);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
         overflow: hidden;
       }
 
@@ -202,229 +174,103 @@
         justify-content: space-between;
         background: transparent;
         color: #f4f4f5;
-        padding: 16px 18px;
+        padding: 13px 16px;
         border-radius: 0;
+        border: 0;
+        cursor: pointer;
       }
+      .panel-toggle:hover { background: rgba(255,255,255,0.04); }
 
-      .panel-toggle:hover {
-        background: #17171c;
-      }
-
-      .panel-title {
-        font-size: 15px;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-      }
-
-      .panel-arrow {
-        font-size: 18px;
-        line-height: 1;
-        transition: transform 0.18s ease;
-      }
-
-      .panel.is-open .panel-arrow {
-        transform: rotate(180deg);
-      }
+      .panel-title { font-size: 13px; font-weight: 700; letter-spacing: -0.02em; }
+      .panel-arrow { font-size: 15px; transition: transform 0.18s ease; }
+      .panel.is-open .panel-arrow { transform: rotate(180deg); }
 
       .panel-body {
         display: none;
-        padding: 0 18px 18px 18px;
-        border-top: 1px solid #27272a;
+        padding: 0 14px 14px;
+        border-top: 1px solid rgba(255,255,255,0.06);
       }
-
-      .panel.is-open .panel-body {
-        display: block;
-      }
-
-      .camera-notes {
-        border: 1px solid #27272a;
-        border-radius: 16px;
-        background: #111114;
-        padding: 22px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-      }
-
-      .camera-notes p {
-        margin: 0 0 14px 0;
-        font-size: 22px;
-        line-height: 1.15;
-        color: #d4d4d8;
-      }
-
-      .camera-notes ol {
-        margin: 0;
-        padding-left: 28px;
-        color: #f4f4f5;
-        font-size: 28px;
-        font-weight: 700;
-        line-height: 1.15;
-        letter-spacing: -0.03em;
-      }
-
-      .camera-notes li + li {
-        margin-top: 10px;
-      }
+      .panel.is-open .panel-body { display: block; }
 
       .tools-grid {
         display: grid;
         grid-template-columns: 1fr auto;
-        gap: 10px;
+        gap: 8px;
         align-items: end;
+        padding-top: 12px;
       }
 
-      .tools select,
-      .manual input {
+      .tools select, .manual input {
         width: 100%;
-        border: 1px solid #3f3f46;
-        background: #09090b;
+        border: 1px solid rgba(255,255,255,0.1);
+        background: rgba(9,9,11,0.85);
         color: #f4f4f5;
-        border-radius: 12px;
-        padding: 14px;
+        border-radius: 10px;
+        padding: 10px 14px;
       }
 
-      .manual {
-        margin-top: 12px;
-      }
-
-      .manual label,
-      .tools label {
+      .tools label, .manual label {
         display: block;
-        margin-bottom: 8px;
-        font-size: 14px;
-        color: #d4d4d8;
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: #a1a1aa;
       }
 
       .manual-row {
         display: grid;
         grid-template-columns: 1fr auto;
-        gap: 10px;
+        gap: 8px;
+        padding-top: 12px;
       }
 
-      .tiny {
-        margin-top: 8px;
-        font-size: 12px;
-        color: #a1a1aa;
-      }
+      .tiny { margin-top: 8px; font-size: 11px; color: #52525b; }
 
+      /* ── MOBILE ── */
       @media (max-width: 640px) {
-        body {
-          background: #000;
-        }
-
-        .page {
-          padding: 0;
-        }
-
-        .card {
-          min-height: 100vh;
-          padding: 0;
-          border: 0;
-          border-radius: 0;
-          background: #000;
-          box-shadow: none;
-        }
-
-        .eyebrow,
-        h1,
-        .actions,
-        .camera-notes,
-        #cameraPanel,
-        #manualPanel {
-          display: none;
-        }
-
-        .camera-layout,
-        .manual-row,
-        .tools-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .camera-layout {
-          display: block;
-          gap: 0;
-        }
-
-        h1 {
-          font-size: 28px;
-        }
-
-        .reader-wrap {
-          padding: 0;
-          border: 0;
-          border-radius: 0;
-          background: #000;
-        }
-
-        #reader {
-          min-height: 100vh;
-          aspect-ratio: auto;
-          border-radius: 0;
-        }
-
-        .status {
-          position: fixed;
-          left: 12px;
-          right: 12px;
-          bottom: 12px;
-          margin-top: 0;
-          min-height: auto;
-          padding: 14px 16px;
-          border-radius: 16px;
-          font-size: clamp(18px, 5vw, 28px);
-          z-index: 10;
-          background: rgba(9, 9, 11, 0.78);
-          backdrop-filter: blur(10px);
-        }
-
-        .overlay-box {
-          width: min(72vw, 300px);
-        }
+        .overlay-box { width: min(72vw, 300px); }
+        .scan-hint { display: none; }
+        .top-bar { padding: 10px 14px; }
+        .panels-row { flex-direction: column; }
       }
     </style>
   </head>
   <body>
-    <div class="page">
-      <div class="card">
-        <div class="eyebrow">UP.S</div>
-        <h1>Check-in</h1>
-        <div class="actions">
-          <button class="primary" id="startBtn">Iniciar camara</button>
-          <button class="secondary" id="stopBtn">Detener camara</button>
-        </div>
 
-        <div class="camera-layout">
-          <aside class="camera-notes">
-            <p>Si el QR no se toma:</p>
-            <ol>
-              <li>Baja el brillo</li>
-              <li>Agranda el QR</li>
-            </ol>
-          </aside>
+    <!-- FULL SCREEN CAMERA -->
+    <div id="reader">
+      <video id="readerVideo" autoplay muted playsinline></video>
+      <div class="overlay">
+        <div class="overlay-box"></div>
+      </div>
+    </div>
 
-          <div class="reader-wrap">
-            <div id="reader">
-              <video id="readerVideo" autoplay muted playsinline></video>
-              <div class="overlay">
-                <div class="overlay-box"></div>
-              </div>
-            </div>
-          </div>
-        </div>
+    <!-- TOP BAR WIDGET -->
+    <div class="top-bar">
+      <span class="eyebrow">UP.S</span>
+      <span class="scan-hint">Escanea el QR de tu tarjeta de membresía</span>
+      <div class="actions">
+        <button class="primary" id="startBtn">Iniciar cámara</button>
+        <button class="secondary" id="stopBtn">Detener cámara</button>
+      </div>
+    </div>
 
-        <div id="status" class="status">Listo para escanear.</div>
+    <!-- BOTTOM UI WIDGETS -->
+    <div class="bottom-ui">
+      <div class="panels-row">
 
         <div class="tools panel" id="cameraPanel">
           <button class="panel-toggle" id="cameraToggle" type="button" aria-expanded="false" aria-controls="cameraPanelBody">
-            <span class="panel-title">Camara</span>
+            <span class="panel-title">Cámara</span>
             <span class="panel-arrow">▾</span>
           </button>
           <div class="panel-body" id="cameraPanelBody">
             <div class="tools-grid">
-              <select id="cameraSelect">
-                <option value="">Seleccionar camara</option>
-              </select>
+              <div>
+                <label for="cameraSelect">Fuente de video</label>
+                <select id="cameraSelect">
+                  <option value="">Seleccionar cámara</option>
+                </select>
+              </div>
               <button class="secondary" id="mirrorBtn">Espejo: Auto</button>
             </div>
           </div>
@@ -437,13 +283,15 @@
           </button>
           <div class="panel-body" id="manualPanelBody">
             <div class="manual-row">
-              <input id="manualQr" placeholder="Pegar codigo manual" />
+              <input id="manualQr" placeholder="Pegar código manual" />
               <button class="secondary" id="manualBtn">Registrar</button>
             </div>
-            <div class="tiny">Util si la camara falla o para hacer pruebas rapidas.</div>
+            <div class="tiny">Útil si la cámara falla o para hacer pruebas rápidas.</div>
           </div>
         </div>
+
       </div>
+      <div id="status" class="status">Listo para escanear.</div>
     </div>
 
     <script>
@@ -464,6 +312,8 @@
       let mobileScanCanvas = null;
       let mobileScanContext = null;
       let mobileScanRegions = [];
+      let desktopScanCanvas = null;
+      let desktopScanContext = null;
 
       const statusEl = document.getElementById("status");
       const manualQrEl = document.getElementById("manualQr");
@@ -722,13 +572,13 @@
 
         const placeholder = document.createElement("option");
         placeholder.value = "";
-        placeholder.textContent = "Seleccionar camara";
+        placeholder.textContent = "Seleccionar cámara";
         cameraSelectEl.appendChild(placeholder);
 
         cameras.forEach((camera, index) => {
           const option = document.createElement("option");
           option.value = camera.deviceId;
-          option.textContent = camera.label || "Camara " + (index + 1);
+          option.textContent = camera.label || "Cámara " + (index + 1);
           cameraSelectEl.appendChild(option);
         });
 
@@ -758,7 +608,7 @@
 
         videoEl.srcObject = null;
         mobileDetectionInFlight = false;
-        setStatus("Camara detenida.", "");
+        setStatus("Cámara detenida.", "");
         syncControls();
       }
 
@@ -841,6 +691,38 @@
         return canvas;
       }
 
+      // Desktop canvas reuse + contrast boost (helps with screen-brightness glare)
+      function drawDesktopScanCanvas(mirrored, preset = "normal") {
+        const width = videoEl.videoWidth;
+        const height = videoEl.videoHeight;
+        if (!width || !height) return null;
+
+        if (!desktopScanCanvas) {
+          desktopScanCanvas = document.createElement("canvas");
+          desktopScanContext = desktopScanCanvas.getContext("2d", { willReadFrequently: true });
+        }
+        if (!desktopScanContext) return null;
+
+        desktopScanCanvas.width = width;
+        desktopScanCanvas.height = height;
+
+        desktopScanContext.save();
+        desktopScanContext.clearRect(0, 0, width, height);
+        if (mirrored) {
+          desktopScanContext.translate(width, 0);
+          desktopScanContext.scale(-1, 1);
+        }
+        desktopScanContext.drawImage(videoEl, 0, 0, width, height);
+        desktopScanContext.restore();
+
+        if (preset !== "normal") {
+          const imageData = desktopScanContext.getImageData(0, 0, width, height);
+          desktopScanContext.putImageData(applyMobileImagePreset(imageData, preset), 0, 0);
+        }
+
+        return desktopScanCanvas;
+      }
+
       function decodeFrame(mirrored) {
         if (typeof window.jsQR !== "function") {
           return null;
@@ -866,39 +748,24 @@
           return null;
         }
 
-        const width = videoEl.videoWidth;
-        const height = videoEl.videoHeight;
-        if (!width || !height) {
-          return null;
+        // Desktop: try normal then contrast (fixes glare from bright screen)
+        const presets = ["normal", "contrast"];
+        for (const preset of presets) {
+          const canvas = drawDesktopScanCanvas(mirrored, preset);
+          if (!canvas || !desktopScanContext) continue;
+
+          const imageData = desktopScanContext.getImageData(0, 0, canvas.width, canvas.height);
+          const result = window.jsQR(imageData.data, canvas.width, canvas.height, {
+            inversionAttempts: "attemptBoth"
+          });
+          if (result) return result.data;
         }
 
-        const canvas = document.createElement("canvas");
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-        if (!context) {
-          return null;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        context.save();
-        if (mirrored) {
-          context.translate(width, 0);
-          context.scale(-1, 1);
-        }
-        context.drawImage(videoEl, 0, 0, width, height);
-        context.restore();
-
-        const imageData = context.getImageData(0, 0, width, height);
-        const result = window.jsQR(imageData.data, width, height, {
-          inversionAttempts: "attemptBoth"
-        });
-
-        return result ? result.data : null;
+        return null;
       }
 
-      async function applyMobileTrackConstraints(track) {
-        if (!isPhoneLayout.matches || !track || typeof track.getCapabilities !== "function" || typeof track.applyConstraints !== "function") {
+      async function applyTrackConstraints(track) {
+        if (!track || typeof track.getCapabilities !== "function" || typeof track.applyConstraints !== "function") {
           return;
         }
 
@@ -945,7 +812,7 @@
         const cleaned = String(qrText || "").trim();
 
         if (!cleaned) {
-          setStatus("Codigo vacio.", "warn");
+          setStatus("Código vacío.", "warn");
           return;
         }
 
@@ -958,7 +825,7 @@
         lastText = cleaned;
         cooldownUntil = now + 1800;
 
-        setStatus("Verificando QR... Ya podes retirar el QR de la camara.", "warn");
+        setStatus("Verificando QR... Ya podés retirar el QR de la cámara.", "warn");
 
         try {
           const headers = {
@@ -1103,22 +970,21 @@
               track = stream.getVideoTracks()[0];
               settings = track && track.getSettings ? track.getSettings() : null;
             }
-            await applyMobileTrackConstraints(track);
           } else if (!selectedCameraId && track) {
             if (settings) {
               selectedCameraId = settings && settings.deviceId ? settings.deviceId : "";
             }
           }
 
-          if (!isPhoneLayout.matches) {
-            setPanelOpen(cameraPanelEl, cameraToggleEl, true);
-          }
+          // Apply focus/exposure constraints on all devices
+          await applyTrackConstraints(track);
+
           syncControls();
           startScanLoop();
           setStatus("Escanea el QR de tu tarjeta de membresia", "");
         } catch (error) {
           console.error(error);
-          setStatus("No pude iniciar la camara o leer el QR.", "err");
+          setStatus("No pude iniciar la cámara o leer el QR.", "err");
         }
       }
 
@@ -1166,7 +1032,7 @@
           if (res.ok) {
             setStatus("Listo para escanear.", "");
           } else {
-            setStatus("Supabase respondio, pero no como esperaba.", "warn");
+            setStatus("Supabase respondió, pero no como esperaba.", "warn");
           }
         } catch (error) {
           setStatus("No pude conectar con Supabase: " + error.message, "err");
@@ -1176,9 +1042,8 @@
         setPanelOpen(cameraPanelEl, cameraToggleEl, false);
         setPanelOpen(manualPanelEl, manualToggleEl, false);
 
-        if (isPhoneLayout.matches) {
-          await startScanner();
-        }
+        // Auto-start cámara en todos los dispositivos
+        await startScanner();
       })();
 
       // ── Spotify Web Playback SDK ──────────────────────────────
