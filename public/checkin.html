@@ -69,30 +69,6 @@
         border-bottom: 1px solid rgba(255,255,255,0.07);
       }
 
-      /* ── SCAN WIDGET ── */
-      .scan-widget {
-        position: fixed;
-        top: 72px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 10;
-        background: rgba(0,0,0,0.62);
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
-        border: 1px solid rgba(255,255,255,0.10);
-        border-radius: 20px;
-        padding: 22px 44px;
-        text-align: center;
-        white-space: nowrap;
-      }
-
-      .scan-widget-text {
-        font-size: clamp(20px, 2.4vw, 30px);
-        font-weight: 600;
-        letter-spacing: -0.02em;
-        color: #e4e4e7;
-      }
-
       .actions {
         display: flex;
         gap: 8px;
@@ -152,7 +128,7 @@
         background: rgba(9,9,11,0.72);
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
-        font-size: clamp(22px, 3.8vw, 52px);
+        font-size: clamp(32px, 5.5vw, 76px);
         font-weight: 800;
         line-height: 1.05;
         letter-spacing: -0.04em;
@@ -267,14 +243,6 @@
       @media (max-width: 640px) {
         .overlay-box { width: min(72vw, 300px); }
         .top-bar { padding: 10px 14px; }
-        .scan-widget {
-          left: 14px;
-          right: 14px;
-          transform: none;
-          white-space: normal;
-          padding: 18px 24px;
-          top: 66px;
-        }
       }
     </style>
   </head>
@@ -292,11 +260,6 @@
     <div class="top-bar">
       <button class="primary" id="startBtn">Iniciar cámara</button>
       <button class="secondary" id="stopBtn">Detener cámara</button>
-    </div>
-
-    <!-- SCAN HINT WIDGET -->
-    <div class="scan-widget">
-      <span class="scan-widget-text">Escanea el QR de tu tarjeta de membresía</span>
     </div>
 
     <!-- BOTTOM UI WIDGETS -->
@@ -341,11 +304,8 @@
       <div class="filter-bar" id="filterBar">
         <button class="filter-btn active" data-filter="normal">Normal</button>
         <button class="filter-btn" data-filter="dark">Oscuro</button>
+        <button class="filter-btn" data-filter="dark-plus">Oscuro+</button>
         <button class="filter-btn" data-filter="very-dark">Muy oscuro</button>
-        <button class="filter-btn" data-filter="max-dark">Negro total</button>
-        <button class="filter-btn" data-filter="invert">Invertido</button>
-        <button class="filter-btn" data-filter="hicontrast">Hi-contraste</button>
-        <button class="filter-btn" data-filter="threshold">Umbral</button>
       </div>
 
       <div id="status" class="status">Listo para escanear.</div>
@@ -362,11 +322,8 @@
       const FILTER_PRESETS = {
         "normal":     "none",
         "dark":       "brightness(0.40) contrast(2.0)",
+        "dark-plus":  "brightness(0.28) contrast(2.4)",
         "very-dark":  "brightness(0.18) contrast(2.8)",
-        "max-dark":   "brightness(0.05) contrast(4.0)",
-        "invert":     "invert(1) brightness(0.75) contrast(1.5)",
-        "hicontrast": "grayscale(1) contrast(5) brightness(0.55)",
-        "threshold":  "grayscale(1) contrast(40) brightness(0.52)",
       };
 
       let currentFilterKey = "normal";
