@@ -234,6 +234,35 @@
 
       .tiny { margin-top: 8px; font-size: 11px; color: #52525b; }
 
+      /* ── FILTER BAR ── */
+      .filter-bar {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .filter-btn {
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 9px;
+        padding: 8px 16px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        background: rgba(15,15,18,0.80);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        color: #71717a;
+        cursor: pointer;
+        transition: 0.15s ease;
+      }
+      .filter-btn:hover { color: #d4d4d8; background: rgba(35,35,40,0.90); }
+      .filter-btn.active {
+        background: rgba(244,244,245,0.92);
+        color: #09090b;
+        border-color: transparent;
+      }
+
       /* ── MOBILE ── */
       @media (max-width: 640px) {
         .overlay-box { width: min(72vw, 300px); }
@@ -308,12 +337,39 @@
         </div>
 
       </div>
+      <!-- Presets de filtro de cámara -->
+      <div class="filter-bar" id="filterBar">
+        <button class="filter-btn active" data-filter="normal">Normal</button>
+        <button class="filter-btn" data-filter="dark">Oscuro</button>
+        <button class="filter-btn" data-filter="very-dark">Muy oscuro</button>
+        <button class="filter-btn" data-filter="max-dark">Negro total</button>
+        <button class="filter-btn" data-filter="invert">Invertido</button>
+        <button class="filter-btn" data-filter="hicontrast">Hi-contraste</button>
+        <button class="filter-btn" data-filter="threshold">Umbral</button>
+      </div>
+
       <div id="status" class="status">Listo para escanear.</div>
     </div>
 
     <script>
       const SUPABASE_URL = "https://sfwmeifxvangpwrrycda.supabase.co";
       const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmd21laWZ4dmFuZ3B3cnJ5Y2RhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3MDk5MDksImV4cCI6MjA4NDI4NTkwOX0.Yw0nCjoErcJojKKIbDxkBT985oY1YiP4IugO2qDMd-A";
+
+      // ── Presets de filtro ─────────────────────────────────────
+      // El filtro se aplica:
+      //   1. Visualmente al <video> → menos luz emitida por la pantalla → menos reflejo en el cel
+      //   2. En context.filter antes de drawImage → jsQR lee los datos ya filtrados
+      const FILTER_PRESETS = {
+        "normal":     "none",
+        "dark":       "brightness(0.40) contrast(2.0)",
+        "very-dark":  "brightness(0.18) contrast(2.8)",
+        "max-dark":   "brightness(0.05) contrast(4.0)",
+        "invert":     "invert(1) brightness(0.75) contrast(1.5)",
+        "hicontrast": "grayscale(1) contrast(5) brightness(0.55)",
+        "threshold":  "grayscale(1) contrast(40) brightness(0.52)",
+      };
+
+      let currentFilterKey = "normal";
 
       let stream = null;
       let isSaving = false;
@@ -708,8 +764,8 @@
         return canvas;
       }
 
-      // Desktop canvas reuse + contrast boost (helps with screen-brightness glare)
-      function drawDesktopScanCanvas(mirrored, preset = "normal") {
+      // Desktop canvas: aplica el filtro seleccionado + pixel preset adicional
+      function drawDesktopScanCanvas(mirrored, pixelPreset = "normal") {
         const width = videoEl.videoWidth;
         const height = videoEl.videoHeight;
         if (!width || !height) return null;
@@ -723,21 +779,32 @@
         desktopScanCanvas.width = width;
         desktopScanCanvas.height = height;
 
+        // Aplica el filtro CSS seleccionado al dibujar en canvas
+        // → afecta tanto la pantalla (menos brillo/reflejo) como los datos que lee jsQR
+        const cssFilter = FILTER_PRESETS[currentFilterKey] || "none";
+
         desktopScanContext.save();
         desktopScanContext.clearRect(0, 0, width, height);
+        if (cssFilter !== "none") desktopScanContext.filter = cssFilter;
         if (mirrored) {
           desktopScanContext.translate(width, 0);
           desktopScanContext.scale(-1, 1);
         }
         desktopScanContext.drawImage(videoEl, 0, 0, width, height);
         desktopScanContext.restore();
+        desktopScanContext.filter = "none"; // reset
 
-        if (preset !== "normal") {
+        if (pixelPreset !== "normal") {
           const imageData = desktopScanContext.getImageData(0, 0, width, height);
-          desktopScanContext.putImageData(applyMobileImagePreset(imageData, preset), 0, 0);
+          desktopScanContext.putImageData(applyMobileImagePreset(imageData, pixelPreset), 0, 0);
         }
 
         return desktopScanCanvas;
+      }
+
+      function applyVideoFilter() {
+        const cssFilter = FILTER_PRESETS[currentFilterKey] || "none";
+        videoEl.style.filter = cssFilter;
       }
 
       function decodeFrame(mirrored) {
@@ -996,6 +1063,7 @@
           // Apply focus/exposure constraints on all devices
           await applyTrackConstraints(track);
 
+          applyVideoFilter(); // aplica filtro visual seleccionado
           syncControls();
           startScanLoop();
           setStatus("Escanea el QR de tu tarjeta de membresia", "");
@@ -1004,6 +1072,16 @@
           setStatus("No pude iniciar la cámara o leer el QR.", "err");
         }
       }
+
+      // ── Filter preset buttons ────────────────────────────────
+      document.querySelectorAll(".filter-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          currentFilterKey = btn.dataset.filter;
+          document.querySelectorAll(".filter-btn").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          applyVideoFilter();
+        });
+      });
 
       startBtn.addEventListener("click", startScanner);
       stopBtn.addEventListener("click", stopScanner);
