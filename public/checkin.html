@@ -128,7 +128,7 @@
         background: rgba(9,9,11,0.72);
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
-        font-size: clamp(32px, 5.5vw, 76px);
+        font-size: clamp(26px, 4vw, 52px);
         font-weight: 800;
         line-height: 1.05;
         letter-spacing: -0.04em;
@@ -303,9 +303,7 @@
       <!-- Presets de filtro de cámara -->
       <div class="filter-bar" id="filterBar">
         <button class="filter-btn active" data-filter="normal">Normal</button>
-        <button class="filter-btn" data-filter="dark">Oscuro</button>
         <button class="filter-btn" data-filter="dark-plus">Oscuro+</button>
-        <button class="filter-btn" data-filter="very-dark">Muy oscuro</button>
       </div>
 
       <div id="status" class="status">Listo para escanear.</div>
@@ -320,10 +318,8 @@
       //   1. Visualmente al <video> → menos luz emitida por la pantalla → menos reflejo en el cel
       //   2. En context.filter antes de drawImage → jsQR lee los datos ya filtrados
       const FILTER_PRESETS = {
-        "normal":     "none",
-        "dark":       "brightness(0.40) contrast(2.0)",
-        "dark-plus":  "brightness(0.34) contrast(2.1)",
-        "very-dark":  "brightness(0.18) contrast(2.8)",
+        "normal":    "none",
+        "dark-plus": "brightness(0.34) contrast(2.1)",
       };
 
       let currentFilterKey = "normal";
