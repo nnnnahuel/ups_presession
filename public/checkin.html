@@ -322,7 +322,7 @@
       const FILTER_PRESETS = {
         "normal":     "none",
         "dark":       "brightness(0.40) contrast(2.0)",
-        "dark-plus":  "brightness(0.28) contrast(2.4)",
+        "dark-plus":  "brightness(0.34) contrast(2.1)",
         "very-dark":  "brightness(0.18) contrast(2.8)",
       };
 
@@ -557,18 +557,22 @@
       }
 
       function buildVideoConstraints(deviceId = "") {
+        // frameRate bajo (ideal 15) → el sensor tiene más tiempo de exposición por frame
+        // → imagen más nítida en condiciones normales de luz
         if (deviceId) {
           return {
             deviceId: { exact: deviceId },
             width: { ideal: 1920 },
-            height: { ideal: 1080 }
+            height: { ideal: 1080 },
+            frameRate: { ideal: 15, max: 30 }
           };
         }
 
         return {
           facingMode: { ideal: "environment" },
           width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          height: { ideal: 1080 },
+          frameRate: { ideal: 15, max: 30 }
         };
       }
 
@@ -820,6 +824,19 @@
 
           if (Array.isArray(capabilities.exposureMode) && capabilities.exposureMode.includes("continuous")) {
             advanced.push({ exposureMode: "continuous" });
+          }
+
+          // Nitidez al máximo si la cámara lo soporta
+          if (capabilities.sharpness && typeof capabilities.sharpness.max === "number") {
+            advanced.push({ sharpness: capabilities.sharpness.max });
+          }
+
+          // Compensación de exposición: +1 stop para aclarar levemente (si disponible)
+          if (capabilities.exposureCompensation && typeof capabilities.exposureCompensation.max === "number") {
+            const target = 1.0; // stops
+            const clamped = Math.min(capabilities.exposureCompensation.max,
+                            Math.max(capabilities.exposureCompensation.min, target));
+            advanced.push({ exposureCompensation: clamped });
           }
 
           if (capabilities.zoom && typeof capabilities.zoom.max === "number" && typeof capabilities.zoom.min === "number" && capabilities.zoom.max > capabilities.zoom.min) {
