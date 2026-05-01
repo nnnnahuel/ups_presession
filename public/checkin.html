@@ -60,33 +60,42 @@
         z-index: 10;
         display: flex;
         align-items: center;
-        gap: 16px;
-        padding: 14px 20px;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 20px;
         background: rgba(0,0,0,0.55);
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
         border-bottom: 1px solid rgba(255,255,255,0.07);
       }
 
-      .eyebrow {
-        font-size: 11px;
-        letter-spacing: 0.2em;
-        text-transform: uppercase;
-        color: #71717a;
-        flex-shrink: 0;
+      /* ── SCAN WIDGET ── */
+      .scan-widget {
+        position: fixed;
+        top: 72px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        background: rgba(0,0,0,0.62);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 20px;
+        padding: 22px 44px;
+        text-align: center;
+        white-space: nowrap;
       }
 
-      .scan-hint {
-        flex: 1;
-        font-size: 15px;
-        color: #d4d4d8;
-        letter-spacing: -0.01em;
+      .scan-widget-text {
+        font-size: clamp(20px, 2.4vw, 30px);
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        color: #e4e4e7;
       }
 
       .actions {
         display: flex;
         gap: 8px;
-        flex-shrink: 0;
       }
 
       button, input, select { font: inherit; }
@@ -228,9 +237,15 @@
       /* ── MOBILE ── */
       @media (max-width: 640px) {
         .overlay-box { width: min(72vw, 300px); }
-        .scan-hint { display: none; }
         .top-bar { padding: 10px 14px; }
-        .panels-row { flex-direction: column; }
+        .scan-widget {
+          left: 14px;
+          right: 14px;
+          transform: none;
+          white-space: normal;
+          padding: 18px 24px;
+          top: 66px;
+        }
       }
     </style>
   </head>
@@ -244,21 +259,23 @@
       </div>
     </div>
 
-    <!-- TOP BAR WIDGET -->
+    <!-- TOP BAR: solo botones -->
     <div class="top-bar">
-      <span class="eyebrow">UP.S</span>
-      <span class="scan-hint">Escanea el QR de tu tarjeta de membresía</span>
-      <div class="actions">
-        <button class="primary" id="startBtn">Iniciar cámara</button>
-        <button class="secondary" id="stopBtn">Detener cámara</button>
-      </div>
+      <button class="primary" id="startBtn">Iniciar cámara</button>
+      <button class="secondary" id="stopBtn">Detener cámara</button>
+    </div>
+
+    <!-- SCAN HINT WIDGET -->
+    <div class="scan-widget">
+      <span class="scan-widget-text">Escanea el QR de tu tarjeta de membresía</span>
     </div>
 
     <!-- BOTTOM UI WIDGETS -->
     <div class="bottom-ui">
-      <div class="panels-row">
+      <!-- Paneles ocultos (funcionalidad preservada para uso programático) -->
+      <div class="panels-row" style="display:none">
 
-        <div class="tools panel" id="cameraPanel">
+        <div class="tools panel" id="cameraPanel" style="display:none">
           <button class="panel-toggle" id="cameraToggle" type="button" aria-expanded="false" aria-controls="cameraPanelBody">
             <span class="panel-title">Cámara</span>
             <span class="panel-arrow">▾</span>
@@ -276,7 +293,7 @@
           </div>
         </div>
 
-        <div class="manual panel" id="manualPanel">
+        <div class="manual panel" id="manualPanel" style="display:none">
           <button class="panel-toggle" id="manualToggle" type="button" aria-expanded="false" aria-controls="manualPanelBody">
             <span class="panel-title">Ingreso manual</span>
             <span class="panel-arrow">▾</span>
