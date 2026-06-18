@@ -1,7 +1,13 @@
-export function selectTracksForRemoval(playlistItems, rotationCount, minPlaylistSize) {
+export function selectTracksForRemoval(
+  playlistItems,
+  rotationCount,
+  minPlaylistSize,
+  { replacementCount = 0 } = {}
+) {
   const total = playlistItems.length;
+  const safeReplacementCount = Math.max(0, Number(replacementCount) || 0);
 
-  if (total <= minPlaylistSize) {
+  if (total <= minPlaylistSize && safeReplacementCount <= 0) {
     return {
       toRemove: [],
       skipped: true,
@@ -9,7 +15,7 @@ export function selectTracksForRemoval(playlistItems, rotationCount, minPlaylist
     };
   }
 
-  const maxRemovable = total - minPlaylistSize;
+  const maxRemovable = total - minPlaylistSize + safeReplacementCount;
   const count = Math.min(rotationCount, maxRemovable);
 
   if (count <= 0) {
@@ -29,7 +35,7 @@ export function selectTracksForRemoval(playlistItems, rotationCount, minPlaylist
     skipped: false,
     reason:
       count < rotationCount
-        ? `Requested ${rotationCount} removals but limited to ${count} by minimum size.`
+        ? `Requested ${rotationCount} removals but limited to ${count} by minimum size and replacements.`
         : null,
   };
 }

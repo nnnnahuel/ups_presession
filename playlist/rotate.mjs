@@ -67,21 +67,6 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
     result.details.playlistSizeBefore = playlistItems.length;
     result.details.pausadasSizeBefore = pausadasItems.length;
 
-    const selection = selectTracksForRemoval(
-      playlistItems,
-      config.ROTATION_COUNT,
-      config.MIN_PLAYLIST_SIZE
-    );
-
-    if (selection.reason) {
-      result.details.selectionReason = selection.reason;
-    }
-
-    if (selection.skipped) {
-      result.skipped = true;
-      result.status = "skipped";
-    }
-
     const currentUris = new Set(playlistItems.map((item) => item.track.uri));
     const pausadasUris = new Set(pausadasItems.map((item) => item.track.uri));
     // Only exclude from main — pausadas IS the source, not a disqualifier
@@ -93,10 +78,9 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
     const cooldownUris = await getCooldownUris(pool, config.COOLDOWN_DAYS);
     const excludeUris = new Set([...currentUris, ...cooldownUris]);
 
-    const targetAddCount = selection.toRemove.length || config.ROTATION_COUNT;
-
-    // Pick oldest eligible tracks from pausadas
-    const pausadasCandidates = pausadasItems
+    // Pick oldest eligible tracks from pausadas before deciding how many can be removed.
+    // The minimum playlist size protects the final size, not a full swap with replacements.
+    const potentialAddCandidates = pausadasItems
       .filter((item) => {
         if (!item.track) return false;
         if (excludeUris.has(item.track.uri)) return false;
@@ -105,14 +89,33 @@ export async function runPlaylistRotation({ pool, dryRun = false, logger = conso
         return true;
       })
       .sort((a, b) => new Date(a.added_at) - new Date(b.added_at))
-      .slice(0, targetAddCount);
+      .slice(0, config.ROTATION_COUNT);
+
+    const selection = selectTracksForRemoval(
+      playlistItems,
+      config.ROTATION_COUNT,
+      config.MIN_PLAYLIST_SIZE,
+      { replacementCount: potentialAddCandidates.length }
+    );
+
+    if (selection.reason) {
+      result.details.selectionReason = selection.reason;
+    }
+
+    if (selection.skipped) {
+      result.skipped = true;
+      result.status = "skipped";
+    }
+
+    const targetAddCount = selection.toRemove.length;
+    const pausadasCandidates = potentialAddCandidates.slice(0, targetAddCount);
 
     result.details.removedCandidates = selection.toRemove.map(formatPlaylistItem);
     result.details.addedCandidates = pausadasCandidates.map(formatPlaylistItem);
     result.details.cooldownCount = cooldownUris.size;
     result.details.replacementCount = pausadasCandidates.length;
 
-    if (pausadasCandidates.length < targetAddCount) {
+    if (targetAddCount > 0 && pausadasCandidates.length < targetAddCount) {
       logger.warn(
         `[playlist] pausadas only has ${pausadasCandidates.length} eligible tracks, wanted ${targetAddCount}`
       );
