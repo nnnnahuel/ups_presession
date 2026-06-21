@@ -96,7 +96,7 @@ export class SpotifyClient {
     }
   }
 
-  async searchTracks(query, limit = 10, pages = 1) {
+  async searchTracks(query, limit = 10, pages = 1, { strict = false } = {}) {
     const tracks = [];
 
     for (let page = 0; page < pages; page += 1) {
@@ -112,12 +112,25 @@ export class SpotifyClient {
           tracks.push(...data.tracks.items);
         }
       } catch (error) {
+        if (strict) {
+          throw error;
+        }
+
         console.warn(`[playlist] Spotify search failed for "${query}": ${error.message}`);
         break;
       }
     }
 
     return tracks;
+  }
+
+  async getTrack(trackId) {
+    const safeTrackId = String(trackId || "").trim();
+    if (!/^[A-Za-z0-9]+$/.test(safeTrackId)) {
+      throw new Error("Invalid Spotify track ID.");
+    }
+
+    return this.#get(`/tracks/${safeTrackId}`);
   }
 
   async getMyTopTracks(timeRange = "medium_term", limit = 50) {
@@ -131,6 +144,26 @@ export class SpotifyClient {
 
   async getPlaybackState() {
     return this.#get("/me/player");
+  }
+
+  async getAvailableDevices() {
+    const data = await this.#get("/me/player/devices");
+    return data.devices || [];
+  }
+
+  async addToQueue(uri, deviceId = null) {
+    const safeUri = sanitizeUris([uri])[0];
+    if (!safeUri) {
+      throw new Error("Invalid Spotify track URI.");
+    }
+
+    const params = { uri: safeUri };
+    const safeDeviceId = typeof deviceId === "string" ? deviceId.trim() : "";
+    if (safeDeviceId) {
+      params.device_id = safeDeviceId;
+    }
+
+    await this.#postWithParams("/me/player/queue", params);
   }
 
   async setVolume(volumePct) {
@@ -152,6 +185,13 @@ export class SpotifyClient {
     return this.#request(`${BASE_URL}${path}`, {
       method: "POST",
       body: JSON.stringify(body),
+    });
+  }
+
+  async #postWithParams(path, params = {}) {
+    const search = new URLSearchParams(params).toString();
+    return this.#request(`${BASE_URL}${path}${search ? `?${search}` : ""}`, {
+      method: "POST",
     });
   }
 

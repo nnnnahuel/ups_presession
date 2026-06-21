@@ -43,6 +43,8 @@ const hasGymSpotify = Boolean(
   process.env.SPOTIFY_CLIENT_SECRET &&
   process.env.SPOTIFY_GYM_REFRESH_TOKEN
 );
+const spotifyStudioConfigs = buildSpotifyStudioConfigs();
+const spotifyStudioClients = new Map();
 
 const checkinClients = new Set();
 const ttsCache = new Map();
@@ -240,6 +242,143 @@ function parseOptionalString(value) {
 
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeStudioId(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_\s]+/g, "-");
+
+  if (["a", "studio-a", "estudio-a", "estudioa", "ups-a", "up-s-a"].includes(normalized)) {
+    return "studio-a";
+  }
+
+  if (["b", "studio-b", "estudio-b", "estudiob", "ups-b", "up-s-b"].includes(normalized)) {
+    return "studio-b";
+  }
+
+  return null;
+}
+
+function buildSpotifyStudioConfigs() {
+  const common = {
+    clientId: process.env.SPOTIFY_CLIENT_ID || "",
+    clientSecret: process.env.SPOTIFY_CLIENT_SECRET || "",
+  };
+
+  return {
+    "studio-a": {
+      ...common,
+      id: "studio-a",
+      label: process.env.SPOTIFY_STUDIO_A_LABEL || "Estudio A UP.S",
+      refreshToken: process.env.SPOTIFY_STUDIO_A_REFRESH_TOKEN || process.env.SPOTIFY_GYM_REFRESH_TOKEN || "",
+      deviceId: process.env.SPOTIFY_STUDIO_A_DEVICE_ID || process.env.SPOTIFY_GYM_DEVICE_ID || "",
+    },
+    "studio-b": {
+      ...common,
+      id: "studio-b",
+      label: process.env.SPOTIFY_STUDIO_B_LABEL || "Estudio B UP.S",
+      refreshToken: process.env.SPOTIFY_STUDIO_B_REFRESH_TOKEN || "",
+      deviceId: process.env.SPOTIFY_STUDIO_B_DEVICE_ID || "",
+    },
+  };
+}
+
+function spotifyEndpointError(statusCode, errorCode, message) {
+  const error = new Error(message || errorCode);
+  error.statusCode = statusCode;
+  error.errorCode = errorCode;
+  return error;
+}
+
+function getSpotifyStudioConfig(value) {
+  const studioId = normalizeStudioId(value);
+  if (!studioId) {
+    throw spotifyEndpointError(400, "spotify_studio_required", "A valid studio is required.");
+  }
+
+  const config = spotifyStudioConfigs[studioId];
+  if (!config || !config.clientId || !config.clientSecret || !config.refreshToken) {
+    throw spotifyEndpointError(503, "spotify_studio_not_configured", "Spotify is not configured for this studio.");
+  }
+
+  return config;
+}
+
+async function withStudioSpotify(studio, fn) {
+  const config = getSpotifyStudioConfig(studio);
+  let client = spotifyStudioClients.get(config.id);
+
+  if (!client) {
+    client = new SpotifyClient({
+      clientId: config.clientId,
+      clientSecret: config.clientSecret,
+      refreshToken: config.refreshToken,
+    });
+    spotifyStudioClients.set(config.id, client);
+  }
+
+  if (!client.accessToken) {
+    await client.authenticate();
+  }
+
+  try {
+    return await fn(client, config);
+  } catch (err) {
+    if (String(err.message).includes("401")) {
+      client.accessToken = null;
+      await client.authenticate();
+      return fn(client, config);
+    }
+
+    throw err;
+  }
+}
+
+function parseSpotifyTrackUri(value) {
+  const match = String(value || "").trim().match(/^spotify:track:([A-Za-z0-9]+)$/);
+  return match ? match[1] : null;
+}
+
+function mapSpotifyTrack(track) {
+  const albumImages = Array.isArray(track?.album?.images) ? track.album.images : [];
+  const image = albumImages.find((item) => item?.url)?.url || null;
+
+  return {
+    id: track?.id || null,
+    uri: track?.uri || null,
+    name: track?.name || "",
+    artists: Array.isArray(track?.artists)
+      ? track.artists.map((artist) => artist?.name).filter(Boolean)
+      : [],
+    album: track?.album?.name || "",
+    album_image_url: image,
+    duration_ms: track?.duration_ms ?? null,
+    explicit: track?.explicit === true,
+    spotify_url: track?.external_urls?.spotify || null,
+  };
+}
+
+function mapSpotifyDevice(device) {
+  return {
+    id: device?.id || null,
+    name: device?.name || "",
+    type: device?.type || "",
+    is_active: device?.is_active === true,
+    is_restricted: device?.is_restricted === true,
+    volume_percent: device?.volume_percent ?? null,
+  };
+}
+
+function sendSpotifyEndpointError(res, error, fallbackCode = "spotify_error") {
+  const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
+  res.status(status).json({
+    error: error?.errorCode || fallbackCode,
+    detail: error?.message || String(error),
+  });
 }
 
 function parseBoolean(value) {
@@ -1053,6 +1192,107 @@ app.post("/api/playlist/rotate", requirePlaylistAuth, async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: "PLAYLIST_ROTATION_FAILED", detail: String(error) });
+  }
+});
+
+app.get("/api/spotify/studios", requirePlaylistAuth, (_req, res) => {
+  res.json({
+    studios: Object.values(spotifyStudioConfigs).map((config) => ({
+      id: config.id,
+      label: config.label,
+      configured: Boolean(config.clientId && config.clientSecret && config.refreshToken),
+      device_id: config.deviceId || null,
+      device_configured: Boolean(config.deviceId),
+    })),
+  });
+});
+
+app.get("/api/spotify/devices", requirePlaylistAuth, async (req, res) => {
+  try {
+    const result = await withStudioSpotify(req.query.studio, async (client, config) => {
+      const devices = await client.getAvailableDevices();
+      return {
+        studio: {
+          id: config.id,
+          label: config.label,
+          device_id: config.deviceId || null,
+          device_configured: Boolean(config.deviceId),
+        },
+        devices: devices.map(mapSpotifyDevice),
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    sendSpotifyEndpointError(res, error, "spotify_devices_error");
+  }
+});
+
+app.get("/api/spotify/search", requirePlaylistAuth, async (req, res) => {
+  const query = parseOptionalString(req.query.q);
+  if (!query) {
+    res.status(400).json({ error: "spotify_search_query_required" });
+    return;
+  }
+
+  const limit = Math.max(1, Math.min(10, Number.parseInt(req.query.limit, 10) || 5));
+  const includeExplicit = parseBoolean(req.query.include_explicit ?? req.query.includeExplicit);
+
+  try {
+    const result = await withStudioSpotify(req.query.studio, async (client, config) => {
+      const tracks = await client.searchTracks(query, limit, 1, { strict: true });
+      return {
+        studio: {
+          id: config.id,
+          label: config.label,
+        },
+        tracks: tracks
+          .map(mapSpotifyTrack)
+          .filter((track) => track.uri && (includeExplicit || track.explicit !== true)),
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    sendSpotifyEndpointError(res, error, "spotify_search_error");
+  }
+});
+
+app.post("/api/spotify/queue", requirePlaylistAuth, async (req, res) => {
+  const uri = parseOptionalString(req.body?.uri ?? req.body?.track_uri);
+  const rawTrackId = parseOptionalString(req.body?.track_id);
+  const trackId =
+    parseSpotifyTrackUri(uri) ||
+    (/^[A-Za-z0-9]+$/.test(rawTrackId || "") ? rawTrackId : null);
+
+  if (!trackId) {
+    res.status(400).json({ error: "spotify_track_required" });
+    return;
+  }
+
+  try {
+    const result = await withStudioSpotify(req.body?.studio ?? req.query.studio, async (client, config) => {
+      const track = await client.getTrack(trackId);
+      if (track?.explicit === true) {
+        throw spotifyEndpointError(422, "explicit_track_blocked", "Explicit tracks are not allowed.");
+      }
+
+      await client.addToQueue(track.uri, config.deviceId || null);
+
+      return {
+        ok: true,
+        studio: {
+          id: config.id,
+          label: config.label,
+        },
+        device_id: config.deviceId || null,
+        track: mapSpotifyTrack(track),
+      };
+    });
+
+    res.status(202).json(result);
+  } catch (error) {
+    sendSpotifyEndpointError(res, error, "spotify_queue_error");
   }
 });
 

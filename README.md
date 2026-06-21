@@ -17,7 +17,7 @@ Required environment variables:
 
 Optional tuning:
 
-- `PLAYLIST_ROTATION_COUNT` default `10`
+- `PLAYLIST_ROTATION_COUNT` default `5`
 - `PLAYLIST_MIN_PLAYLIST_SIZE` default `40`
 - `PLAYLIST_COOLDOWN_DAYS` default `45`
 - `PLAYLIST_EXPLICIT_PENALTY` default `0.3`
@@ -35,6 +35,31 @@ Operational entry points:
 
 For Railway Cron, call `POST /api/playlist/rotate` with `Authorization: Bearer <PLAYLIST_API_TOKEN>`.
 For local Spotify OAuth, register `http://127.0.0.1:8888/callback` as the redirect URI.
+
+## Training song requests
+
+The backend exposes internal endpoints for athlete song requests. They are protected
+with the same `PLAYLIST_API_TOKEN` bearer token and are intended to be called
+server-to-server from `ups_payments`.
+
+Studio account environment variables:
+
+- `SPOTIFY_STUDIO_A_REFRESH_TOKEN` falls back to `SPOTIFY_GYM_REFRESH_TOKEN`
+- `SPOTIFY_STUDIO_B_REFRESH_TOKEN`
+- `SPOTIFY_STUDIO_A_DEVICE_ID` optional, falls back to `SPOTIFY_GYM_DEVICE_ID`
+- `SPOTIFY_STUDIO_B_DEVICE_ID` optional
+- `SPOTIFY_STUDIO_A_LABEL` optional, default `Estudio A UP.S`
+- `SPOTIFY_STUDIO_B_LABEL` optional, default `Estudio B UP.S`
+
+Operational entry points:
+
+- `GET /api/spotify/studios`
+- `GET /api/spotify/devices?studio=studio-a`
+- `GET /api/spotify/search?studio=studio-a&q=<query>`
+- `POST /api/spotify/queue` with body `{ "studio": "studio-a", "uri": "spotify:track:..." }`
+
+Search excludes explicit tracks by default. Queueing always rejects explicit tracks
+server-side.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
