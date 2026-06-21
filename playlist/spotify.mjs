@@ -163,7 +163,7 @@ export class SpotifyClient {
       params.device_id = safeDeviceId;
     }
 
-    await this.#postWithParams("/me/player/queue", params);
+    await this.#postWithParams("/me/player/queue", params, { parseResponse: false });
   }
 
   async setVolume(volumePct) {
@@ -188,11 +188,11 @@ export class SpotifyClient {
     });
   }
 
-  async #postWithParams(path, params = {}) {
+  async #postWithParams(path, params = {}, { parseResponse = true } = {}) {
     const search = new URLSearchParams(params).toString();
     return this.#request(`${BASE_URL}${path}${search ? `?${search}` : ""}`, {
       method: "POST",
-    });
+    }, 0, { parseResponse });
   }
 
   async #delete(path, body = {}) {
@@ -202,7 +202,7 @@ export class SpotifyClient {
     });
   }
 
-  async #request(url, options = {}, retries = 0) {
+  async #request(url, options = {}, retries = 0, { parseResponse = true } = {}) {
     if (!this.accessToken) {
       throw new Error("Spotify client is not authenticated.");
     }
@@ -220,12 +220,16 @@ export class SpotifyClient {
       const retryAfter = Number.parseInt(response.headers.get("Retry-After") || "1", 10);
       const waitMs = retryAfter * 1000 * Math.pow(2, retries);
       await sleep(waitMs);
-      return this.#request(url, options, retries + 1);
+      return this.#request(url, options, retries + 1, { parseResponse });
     }
 
     if (!response.ok) {
       const detail = await response.text();
       throw new Error(`Spotify API error ${response.status} on ${url}: ${detail}`);
+    }
+
+    if (!parseResponse || response.status === 204) {
+      return null;
     }
 
     const text = await response.text();
