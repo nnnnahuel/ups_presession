@@ -166,7 +166,7 @@ export class SpotifyClient {
     await this.#postWithParams("/me/player/queue", params, { parseResponse: false });
   }
 
-  async playPlaylist(playlistId, deviceId = null) {
+  async playPlaylist(playlistId, deviceId = null, options = {}) {
     const safePlaylistId = String(playlistId || "").trim();
     if (!/^[A-Za-z0-9]+$/.test(safePlaylistId)) {
       throw new Error("Invalid Spotify playlist ID.");
@@ -178,10 +178,23 @@ export class SpotifyClient {
       params.device_id = safeDeviceId;
     }
 
+    const body = { context_uri: `spotify:playlist:${safePlaylistId}` };
+    const offsetUri = sanitizeUris([options.offsetUri])[0];
+    if (offsetUri) {
+      body.offset = { uri: offsetUri };
+    } else if (Number.isInteger(options.offsetPosition) && options.offsetPosition >= 0) {
+      body.offset = { position: options.offsetPosition };
+    }
+
+    const positionMs = Math.max(0, Number.parseInt(options.positionMs, 10) || 0);
+    if (positionMs > 0) {
+      body.position_ms = positionMs;
+    }
+
     await this.#putWithBodyAndParams(
       "/me/player/play",
       params,
-      { context_uri: `spotify:playlist:${safePlaylistId}` },
+      body,
       { parseResponse: false }
     );
   }

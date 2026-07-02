@@ -52,6 +52,9 @@ const startState = { value: "", consumedAt: null };
 const TZ = "America/Argentina/Buenos_Aires";
 const DEFAULT_GYM_PLAYLIST_NAME = "UP.S - SPT";
 const SPOTIFY_PLAYLIST_GUARD_CRON = "0 7,15 * * *";
+const DEFAULT_PLAYLIST_HANDOFF_DELAY_SECONDS = 22;
+const DEFAULT_PLAYLIST_HANDOFF_TIMEOUT_SECONDS = 15 * 60;
+const DEFAULT_PLAYLIST_HANDOFF_POLL_SECONDS = 5;
 
 const pool = hasDatabase
   ? new Pool({
@@ -246,6 +249,15 @@ function parseOptionalString(value) {
   return trimmed ? trimmed : null;
 }
 
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function normalizeStudioId(value) {
   const normalized = String(value || "")
     .trim()
@@ -379,6 +391,38 @@ function spotifyPlaylistGuardEnabled() {
   return String(process.env.SPOTIFY_PLAYLIST_GUARD_ENABLED || "true").toLowerCase() !== "false";
 }
 
+function spotifyPlaylistGuardMode(value, fallback = "immediate") {
+  const normalized = String(value || fallback).trim().toLowerCase();
+  return normalized === "soft" ? "soft" : "immediate";
+}
+
+function spotifyPlaylistHandoffDelayMs() {
+  return (
+    parsePositiveInteger(
+      process.env.SPOTIFY_PLAYLIST_HANDOFF_DELAY_SECONDS,
+      DEFAULT_PLAYLIST_HANDOFF_DELAY_SECONDS
+    ) * 1000
+  );
+}
+
+function spotifyPlaylistHandoffTimeoutMs() {
+  return (
+    parsePositiveInteger(
+      process.env.SPOTIFY_PLAYLIST_HANDOFF_TIMEOUT_SECONDS,
+      DEFAULT_PLAYLIST_HANDOFF_TIMEOUT_SECONDS
+    ) * 1000
+  );
+}
+
+function spotifyPlaylistHandoffPollMs() {
+  return (
+    parsePositiveInteger(
+      process.env.SPOTIFY_PLAYLIST_HANDOFF_POLL_SECONDS,
+      DEFAULT_PLAYLIST_HANDOFF_POLL_SECONDS
+    ) * 1000
+  );
+}
+
 function parseSpotifyPlaylistId(value) {
   const raw = String(value || "").trim();
   if (!raw) {
@@ -436,6 +480,10 @@ function spotifyPlaybackSummary(state) {
       repeat_state: null,
       device_id: null,
       device_name: null,
+      item_uri: null,
+      item_name: null,
+      progress_ms: null,
+      duration_ms: null,
     };
   }
 
@@ -445,10 +493,163 @@ function spotifyPlaybackSummary(state) {
     repeat_state: state.repeat_state || null,
     device_id: state.device?.id || null,
     device_name: state.device?.name || null,
+    item_uri: state.item?.uri || null,
+    item_name: state.item?.name || null,
+    progress_ms: Number.isFinite(Number(state.progress_ms)) ? Number(state.progress_ms) : null,
+    duration_ms: Number.isFinite(Number(state.item?.duration_ms)) ? Number(state.item.duration_ms) : null,
   };
 }
 
-async function ensureSpotifyPlaylistForStudio({ studio, dryRun = false }) {
+function spotifyTrackSummary(track) {
+  return {
+    id: track?.id || null,
+    uri: track?.uri || null,
+    name: track?.name || "",
+    artists: Array.isArray(track?.artists)
+      ? track.artists.map((artist) => artist?.name).filter(Boolean)
+      : [],
+  };
+}
+
+async function selectSpotifyPlaylistHandoffTrack(client, playlistId, currentTrackUri = null) {
+  const playlistItems = await client.getPlaylistItems(playlistId);
+  const tracks = playlistItems
+    .map((item) => item?.track)
+    .filter((track) => track?.uri && parseSpotifyTrackUri(track.uri) && track.explicit !== true);
+
+  if (!tracks.length) {
+    throw spotifyEndpointError(422, "spotify_playlist_empty", "The playlist has no playable tracks.");
+  }
+
+  const currentTrack = currentTrackUri ? tracks.find((track) => track.uri === currentTrackUri) : null;
+  if (currentTrack) {
+    return {
+      track: currentTrack,
+      current_track_in_playlist: true,
+    };
+  }
+
+  return {
+    track: tracks[Math.floor(Math.random() * tracks.length)],
+    current_track_in_playlist: false,
+  };
+}
+
+async function waitForSpotifyTrack(client, trackUri, targetDeviceId, timeoutMs, pollMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const state = await client.getPlaybackState();
+    const summary = spotifyPlaybackSummary(state);
+    const onExpectedDevice = !targetDeviceId || summary.device_id === targetDeviceId;
+    if (summary.item_uri === trackUri && onExpectedDevice && summary.playing) {
+      return state;
+    }
+
+    await sleep(Math.min(pollMs, Math.max(1000, deadline - Date.now())));
+  }
+
+  return null;
+}
+
+async function waitPastSpotifyCrossfade(client, trackUri, delayMs) {
+  let state = await client.getPlaybackState();
+  let summary = spotifyPlaybackSummary(state);
+  if (summary.item_uri !== trackUri || !summary.playing) {
+    return null;
+  }
+
+  const remainingDelayMs = Math.max(0, delayMs - (summary.progress_ms || 0));
+  if (remainingDelayMs > 0) {
+    await sleep(remainingDelayMs);
+    state = await client.getPlaybackState();
+    summary = spotifyPlaybackSummary(state);
+  }
+
+  return summary.item_uri === trackUri && summary.playing ? state : null;
+}
+
+async function runSpotifySoftPlaylistHandoff({ client, config, playlistId, state }) {
+  const targetDeviceId = config.deviceId || null;
+  const delayMs = spotifyPlaylistHandoffDelayMs();
+  const timeoutMs = spotifyPlaylistHandoffTimeoutMs();
+  const pollMs = spotifyPlaylistHandoffPollMs();
+  const currentTrackUri = spotifyPlaybackSummary(state).item_uri;
+  const selected = await selectSpotifyPlaylistHandoffTrack(client, playlistId, currentTrackUri);
+  const handoffTrack = selected.track;
+  const actions = [];
+
+  if (!selected.current_track_in_playlist) {
+    await client.addToQueue(handoffTrack.uri, targetDeviceId);
+    actions.push("queue_playlist_track");
+  }
+
+  actions.push("wait_for_handoff_track");
+  const startedState = selected.current_track_in_playlist
+    ? state
+    : await waitForSpotifyTrack(client, handoffTrack.uri, targetDeviceId, timeoutMs, pollMs);
+
+  if (!startedState) {
+    return {
+      skipped: true,
+      reason: "soft_handoff_timeout",
+      actions,
+      handoff_track: spotifyTrackSummary(handoffTrack),
+      timeout_ms: timeoutMs,
+      delay_ms: delayMs,
+    };
+  }
+
+  const settledState = await waitPastSpotifyCrossfade(client, handoffTrack.uri, delayMs);
+  if (!settledState) {
+    return {
+      skipped: true,
+      reason: "handoff_track_changed",
+      actions,
+      handoff_track: spotifyTrackSummary(handoffTrack),
+      timeout_ms: timeoutMs,
+      delay_ms: delayMs,
+    };
+  }
+
+  const settledSummary = spotifyPlaybackSummary(settledState);
+  await client.playPlaylist(playlistId, targetDeviceId, {
+    offsetUri: handoffTrack.uri,
+    positionMs: settledSummary.progress_ms || 0,
+  });
+  actions.push("play_playlist_context_from_track");
+
+  await client.setRepeatMode("context", targetDeviceId);
+  actions.push("set_repeat_context");
+
+  return {
+    skipped: false,
+    reason: null,
+    actions,
+    handoff_track: spotifyTrackSummary(handoffTrack),
+    timeout_ms: timeoutMs,
+    delay_ms: delayMs,
+  };
+}
+
+async function planSpotifySoftPlaylistHandoff({ client, playlistId, state }) {
+  const currentTrackUri = spotifyPlaybackSummary(state).item_uri;
+  const selected = await selectSpotifyPlaylistHandoffTrack(client, playlistId, currentTrackUri);
+  const actions = selected.current_track_in_playlist
+    ? ["wait_for_handoff_track", "play_playlist_context_from_track", "set_repeat_context"]
+    : ["queue_playlist_track", "wait_for_handoff_track", "play_playlist_context_from_track", "set_repeat_context"];
+
+  return {
+    skipped: false,
+    reason: null,
+    actions,
+    handoff_track: spotifyTrackSummary(selected.track),
+    current_track_in_playlist: selected.current_track_in_playlist,
+    timeout_ms: spotifyPlaylistHandoffTimeoutMs(),
+    delay_ms: spotifyPlaylistHandoffDelayMs(),
+  };
+}
+
+async function ensureSpotifyPlaylistForStudio({ studio, dryRun = false, mode = "immediate" }) {
   const playlistId = spotifyGuardPlaylistId();
   if (!playlistId) {
     return {
@@ -462,6 +663,7 @@ async function ensureSpotifyPlaylistForStudio({ studio, dryRun = false }) {
   }
 
   const targetContextUri = spotifyPlaylistContextUri(playlistId);
+  const guardMode = spotifyPlaylistGuardMode(mode);
   return withStudioSpotify(studio, async (client, config) => {
     const state = await client.getPlaybackState();
     const before = spotifyPlaybackSummary(state);
@@ -470,6 +672,72 @@ async function ensureSpotifyPlaylistForStudio({ studio, dryRun = false }) {
     const onTargetDevice = !targetDeviceId || before.device_id === targetDeviceId;
     const repeatOk = before.repeat_state === "context";
     const actions = [];
+
+    if (onTargetPlaylist && onTargetDevice) {
+      if (!repeatOk) {
+        actions.push("set_repeat_context");
+      }
+
+      if (dryRun) {
+        return {
+          studio: config.id,
+          label: config.label,
+          skipped: false,
+          dry_run: true,
+          mode: guardMode,
+          playlist_id: playlistId,
+          playlist_name: spotifyGuardPlaylistName(),
+          target_context_uri: targetContextUri,
+          target_device_id: targetDeviceId,
+          before,
+          actions,
+        };
+      }
+
+      if (!repeatOk) {
+        await client.setRepeatMode("context", targetDeviceId);
+      }
+
+      const after = await client.getPlaybackState();
+      return {
+        studio: config.id,
+        label: config.label,
+        skipped: false,
+        dry_run: false,
+        mode: guardMode,
+        playlist_id: playlistId,
+        playlist_name: spotifyGuardPlaylistName(),
+        target_context_uri: targetContextUri,
+        target_device_id: targetDeviceId,
+        before,
+        after: spotifyPlaybackSummary(after),
+        actions,
+      };
+    }
+
+    if (guardMode === "soft" && before.playing && onTargetDevice) {
+      const handoff = dryRun
+        ? await planSpotifySoftPlaylistHandoff({ client, playlistId, state })
+        : await runSpotifySoftPlaylistHandoff({ client, config, playlistId, state });
+      const after = dryRun ? null : await client.getPlaybackState();
+
+      return {
+        studio: config.id,
+        label: config.label,
+        skipped: handoff.skipped,
+        reason: handoff.reason,
+        dry_run: dryRun,
+        mode: guardMode,
+        playlist_id: playlistId,
+        playlist_name: spotifyGuardPlaylistName(),
+        target_context_uri: targetContextUri,
+        target_device_id: targetDeviceId,
+        before,
+        after: after ? spotifyPlaybackSummary(after) : null,
+        actions: handoff.actions,
+        handoff,
+      };
+    }
 
     if (!onTargetPlaylist || !onTargetDevice || !state) {
       actions.push("play_playlist");
@@ -485,6 +753,7 @@ async function ensureSpotifyPlaylistForStudio({ studio, dryRun = false }) {
         label: config.label,
         skipped: false,
         dry_run: true,
+        mode: guardMode,
         playlist_id: playlistId,
         playlist_name: spotifyGuardPlaylistName(),
         target_context_uri: targetContextUri,
@@ -508,6 +777,7 @@ async function ensureSpotifyPlaylistForStudio({ studio, dryRun = false }) {
       label: config.label,
       skipped: false,
       dry_run: false,
+      mode: guardMode,
       playlist_id: playlistId,
       playlist_name: spotifyGuardPlaylistName(),
       target_context_uri: targetContextUri,
@@ -519,7 +789,7 @@ async function ensureSpotifyPlaylistForStudio({ studio, dryRun = false }) {
   });
 }
 
-async function runSpotifyPlaylistGuard({ dryRun = false, studios = null } = {}) {
+async function runSpotifyPlaylistGuard({ dryRun = false, studios = null, mode = "immediate" } = {}) {
   const startedAt = new Date().toISOString();
   if (!spotifyPlaylistGuardEnabled()) {
     return {
@@ -532,12 +802,13 @@ async function runSpotifyPlaylistGuard({ dryRun = false, studios = null } = {}) 
   }
 
   const studioIds = studios?.length ? studios : spotifyGuardStudioIds();
+  const guardMode = spotifyPlaylistGuardMode(mode);
   const results = [];
   const errors = [];
 
   for (const studio of studioIds) {
     try {
-      results.push(await ensureSpotifyPlaylistForStudio({ studio, dryRun }));
+      results.push(await ensureSpotifyPlaylistForStudio({ studio, dryRun, mode: guardMode }));
     } catch (error) {
       errors.push({
         studio,
@@ -551,6 +822,7 @@ async function runSpotifyPlaylistGuard({ dryRun = false, studios = null } = {}) 
     ok: errors.length === 0,
     skipped: false,
     dry_run: dryRun,
+    mode: guardMode,
     started_at: startedAt,
     playlist_id: spotifyGuardPlaylistId() || null,
     playlist_name: spotifyGuardPlaylistName(),
@@ -1499,7 +1771,8 @@ app.post("/api/spotify/playlist-guard", requirePlaylistAuth, async (req, res) =>
 
   try {
     const dryRun = req.body?.dryRun === true || req.query.dryRun === "true";
-    const result = await runSpotifyPlaylistGuard({ dryRun, studios });
+    const mode = spotifyPlaylistGuardMode(req.body?.mode ?? req.query.mode, "immediate");
+    const result = await runSpotifyPlaylistGuard({ dryRun, studios, mode });
     res.status(result.ok ? 200 : 502).json(result);
   } catch (error) {
     sendSpotifyEndpointError(res, error, "spotify_playlist_guard_error");
@@ -2051,12 +2324,13 @@ function startSpotifyPlaylistGuardJobs() {
     () => {
       runDetached(
         "cron spotify_playlist_guard",
-        runSpotifyPlaylistGuard().then((result) => {
+        runSpotifyPlaylistGuard({ mode: "soft" }).then((result) => {
           console.log(
             "[spotify] playlist_guard",
             JSON.stringify({
               ok: result.ok,
               skipped: result.skipped,
+              mode: result.mode,
               playlist_id: result.playlist_id,
               playlist_name: result.playlist_name,
               studios: result.studios,
@@ -2065,6 +2339,7 @@ function startSpotifyPlaylistGuardJobs() {
                 actions: item.actions,
                 skipped: item.skipped,
                 reason: item.reason,
+                handoff_track: item.handoff?.handoff_track || null,
               })),
               errors: result.errors,
             })

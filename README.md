@@ -57,6 +57,9 @@ Playlist guard environment variables:
 - `SPOTIFY_GYM_PLAYLIST_NAME` optional, default `UP.S - SPT`
 - `SPOTIFY_PLAYLIST_GUARD_STUDIOS` optional, default `studio-a`
 - `SPOTIFY_PLAYLIST_GUARD_ENABLED` optional, set `false` to disable
+- `SPOTIFY_PLAYLIST_HANDOFF_DELAY_SECONDS` optional, default `22`
+- `SPOTIFY_PLAYLIST_HANDOFF_TIMEOUT_SECONDS` optional, default `900`
+- `SPOTIFY_PLAYLIST_HANDOFF_POLL_SECONDS` optional, default `5`
 
 Operational entry points:
 
@@ -64,16 +67,20 @@ Operational entry points:
 - `GET /api/spotify/devices?studio=studio-a`
 - `GET /api/spotify/search?studio=studio-a&q=<query>`
 - `POST /api/spotify/queue` with body `{ "studio": "studio-a", "uri": "spotify:track:..." }`
-- `POST /api/spotify/playlist-guard` to ensure the gym playlist is active and repeating
+- `POST /api/spotify/playlist-guard` to ensure the gym playlist is active and repeating.
+  Defaults to immediate mode; pass `mode=soft` for handoff mode.
 
 Search excludes explicit tracks by default. Queueing always rejects explicit tracks
 server-side.
 
 The server also runs the playlist guard every day at 07:00 and 15:00
-`America/Argentina/Buenos_Aires`. If the active Spotify context is not the gym
-playlist, it starts that playlist on the configured studio device. It also sets
-Spotify repeat mode to `context`, so after the queue finishes Spotify returns to
-the playlist instead of drifting into recommendations or a different context.
+`America/Argentina/Buenos_Aires` in soft handoff mode. If the gym playlist is
+already active, it does nothing except ensure Spotify repeat mode is `context`.
+If nothing is playing, it starts the gym playlist directly. If another context is
+playing, it queues one track from the gym playlist, waits for that track to begin,
+waits past the crossfade window, then anchors playback back to the gym playlist
+from that same track and sets repeat mode to `context`. If the queued track does
+not start before the timeout, it does not cut the current music.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
