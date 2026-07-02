@@ -413,10 +413,7 @@ function spotifyGuardPlaylistName() {
 
 function spotifyGuardStudioIds(value = process.env.SPOTIFY_PLAYLIST_GUARD_STUDIOS) {
   if (!value) {
-    const configured = Object.values(spotifyStudioConfigs)
-      .filter((config) => config.clientId && config.clientSecret && config.refreshToken)
-      .map((config) => config.id);
-    return configured.length ? configured : ["studio-a"];
+    return ["studio-a"];
   }
 
   const raw = String(value)

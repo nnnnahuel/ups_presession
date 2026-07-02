@@ -55,7 +55,7 @@ Playlist guard environment variables:
 
 - `SPOTIFY_GYM_PLAYLIST_ID` optional, falls back to `SPOTIFY_MAIN_PLAYLIST_ID`
 - `SPOTIFY_GYM_PLAYLIST_NAME` optional, default `UP.S - SPT`
-- `SPOTIFY_PLAYLIST_GUARD_STUDIOS` optional, defaults to all configured studios
+- `SPOTIFY_PLAYLIST_GUARD_STUDIOS` optional, default `studio-a`
 - `SPOTIFY_PLAYLIST_GUARD_ENABLED` optional, set `false` to disable
 
 Operational entry points:
