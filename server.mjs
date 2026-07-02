@@ -50,6 +50,8 @@ const checkinClients = new Set();
 const ttsCache = new Map();
 const startState = { value: "", consumedAt: null };
 const TZ = "America/Argentina/Buenos_Aires";
+const DEFAULT_GYM_PLAYLIST_NAME = "UP.S - SPT";
+const SPOTIFY_PLAYLIST_GUARD_CRON = "0 7,15 * * *";
 
 const pool = hasDatabase
   ? new Pool({
@@ -370,6 +372,194 @@ function mapSpotifyDevice(device) {
     is_active: device?.is_active === true,
     is_restricted: device?.is_restricted === true,
     volume_percent: device?.volume_percent ?? null,
+  };
+}
+
+function spotifyPlaylistGuardEnabled() {
+  return String(process.env.SPOTIFY_PLAYLIST_GUARD_ENABLED || "true").toLowerCase() !== "false";
+}
+
+function parseSpotifyPlaylistId(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  const uriMatch = raw.match(/^spotify:playlist:([A-Za-z0-9]+)$/);
+  if (uriMatch) {
+    return uriMatch[1];
+  }
+
+  const urlMatch = raw.match(/open\.spotify\.com\/playlist\/([A-Za-z0-9]+)/);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+
+  return /^[A-Za-z0-9]+$/.test(raw) ? raw : "";
+}
+
+function spotifyGuardPlaylistId() {
+  return parseSpotifyPlaylistId(
+    process.env.SPOTIFY_GYM_PLAYLIST_ID ||
+    process.env.SPOTIFY_GYM_ENFORCED_PLAYLIST_ID ||
+    process.env.SPOTIFY_MAIN_PLAYLIST_ID ||
+    ""
+  );
+}
+
+function spotifyGuardPlaylistName() {
+  return (process.env.SPOTIFY_GYM_PLAYLIST_NAME || DEFAULT_GYM_PLAYLIST_NAME).trim();
+}
+
+function spotifyGuardStudioIds(value = process.env.SPOTIFY_PLAYLIST_GUARD_STUDIOS) {
+  if (!value) {
+    const configured = Object.values(spotifyStudioConfigs)
+      .filter((config) => config.clientId && config.clientSecret && config.refreshToken)
+      .map((config) => config.id);
+    return configured.length ? configured : ["studio-a"];
+  }
+
+  const raw = String(value)
+    .split(",")
+    .map((item) => normalizeStudioId(item))
+    .filter(Boolean);
+  return [...new Set(raw)];
+}
+
+function spotifyPlaylistContextUri(playlistId) {
+  const safePlaylistId = String(playlistId || "").trim();
+  return safePlaylistId ? `spotify:playlist:${safePlaylistId}` : "";
+}
+
+function spotifyPlaybackSummary(state) {
+  if (!state) {
+    return {
+      playing: false,
+      context_uri: null,
+      repeat_state: null,
+      device_id: null,
+      device_name: null,
+    };
+  }
+
+  return {
+    playing: state.is_playing === true,
+    context_uri: state.context?.uri || null,
+    repeat_state: state.repeat_state || null,
+    device_id: state.device?.id || null,
+    device_name: state.device?.name || null,
+  };
+}
+
+async function ensureSpotifyPlaylistForStudio({ studio, dryRun = false }) {
+  const playlistId = spotifyGuardPlaylistId();
+  if (!playlistId) {
+    return {
+      studio,
+      skipped: true,
+      reason: "playlist_not_configured",
+      playlist_id: null,
+      playlist_name: spotifyGuardPlaylistName(),
+      actions: [],
+    };
+  }
+
+  const targetContextUri = spotifyPlaylistContextUri(playlistId);
+  return withStudioSpotify(studio, async (client, config) => {
+    const state = await client.getPlaybackState();
+    const before = spotifyPlaybackSummary(state);
+    const targetDeviceId = config.deviceId || null;
+    const onTargetPlaylist = before.context_uri === targetContextUri;
+    const onTargetDevice = !targetDeviceId || before.device_id === targetDeviceId;
+    const repeatOk = before.repeat_state === "context";
+    const actions = [];
+
+    if (!onTargetPlaylist || !onTargetDevice || !state) {
+      actions.push("play_playlist");
+    }
+
+    if (!repeatOk) {
+      actions.push("set_repeat_context");
+    }
+
+    if (dryRun) {
+      return {
+        studio: config.id,
+        label: config.label,
+        skipped: false,
+        dry_run: true,
+        playlist_id: playlistId,
+        playlist_name: spotifyGuardPlaylistName(),
+        target_context_uri: targetContextUri,
+        target_device_id: targetDeviceId,
+        before,
+        actions,
+      };
+    }
+
+    if (actions.includes("play_playlist")) {
+      await client.playPlaylist(playlistId, targetDeviceId);
+    }
+
+    if (actions.includes("set_repeat_context")) {
+      await client.setRepeatMode("context", targetDeviceId);
+    }
+
+    const after = await client.getPlaybackState();
+    return {
+      studio: config.id,
+      label: config.label,
+      skipped: false,
+      dry_run: false,
+      playlist_id: playlistId,
+      playlist_name: spotifyGuardPlaylistName(),
+      target_context_uri: targetContextUri,
+      target_device_id: targetDeviceId,
+      before,
+      after: spotifyPlaybackSummary(after),
+      actions,
+    };
+  });
+}
+
+async function runSpotifyPlaylistGuard({ dryRun = false, studios = null } = {}) {
+  const startedAt = new Date().toISOString();
+  if (!spotifyPlaylistGuardEnabled()) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "disabled",
+      started_at: startedAt,
+      results: [],
+    };
+  }
+
+  const studioIds = studios?.length ? studios : spotifyGuardStudioIds();
+  const results = [];
+  const errors = [];
+
+  for (const studio of studioIds) {
+    try {
+      results.push(await ensureSpotifyPlaylistForStudio({ studio, dryRun }));
+    } catch (error) {
+      errors.push({
+        studio,
+        error: error?.errorCode || "spotify_playlist_guard_error",
+        detail: error?.message || String(error),
+      });
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    skipped: false,
+    dry_run: dryRun,
+    started_at: startedAt,
+    playlist_id: spotifyGuardPlaylistId() || null,
+    playlist_name: spotifyGuardPlaylistName(),
+    studios: studioIds,
+    results,
+    errors,
   };
 }
 
@@ -1296,6 +1486,29 @@ app.post("/api/spotify/queue", requirePlaylistAuth, async (req, res) => {
   }
 });
 
+app.post("/api/spotify/playlist-guard", requirePlaylistAuth, async (req, res) => {
+  const rawStudios = req.body?.studios ?? req.query.studios ?? req.body?.studio ?? req.query.studio;
+  let studios = null;
+  if (Array.isArray(rawStudios)) {
+    studios = [...new Set(rawStudios.map((item) => normalizeStudioId(item)).filter(Boolean))];
+  } else if (typeof rawStudios === "string" && rawStudios.trim()) {
+    studios = spotifyGuardStudioIds(rawStudios);
+  }
+
+  if (rawStudios && studios?.length === 0) {
+    res.status(400).json({ error: "spotify_studio_required" });
+    return;
+  }
+
+  try {
+    const dryRun = req.body?.dryRun === true || req.query.dryRun === "true";
+    const result = await runSpotifyPlaylistGuard({ dryRun, studios });
+    res.status(result.ok ? 200 : 502).json(result);
+  } catch (error) {
+    sendSpotifyEndpointError(res, error, "spotify_playlist_guard_error");
+  }
+});
+
 app.get("/screen", (_req, res) => {
   res.setHeader("Cache-Control", "no-store, must-revalidate");
   res.sendFile(path.join(screenDir, "index.html"));
@@ -1831,9 +2044,45 @@ function startVolumeControlJobs() {
   }, WORKER_OFFLINE_INTERVAL_MS);
 }
 
+function startSpotifyPlaylistGuardJobs() {
+  if (!spotifyPlaylistGuardEnabled()) {
+    return;
+  }
+
+  cron.schedule(
+    SPOTIFY_PLAYLIST_GUARD_CRON,
+    () => {
+      runDetached(
+        "cron spotify_playlist_guard",
+        runSpotifyPlaylistGuard().then((result) => {
+          console.log(
+            "[spotify] playlist_guard",
+            JSON.stringify({
+              ok: result.ok,
+              skipped: result.skipped,
+              playlist_id: result.playlist_id,
+              playlist_name: result.playlist_name,
+              studios: result.studios,
+              actions: result.results?.map((item) => ({
+                studio: item.studio,
+                actions: item.actions,
+                skipped: item.skipped,
+                reason: item.reason,
+              })),
+              errors: result.errors,
+            })
+          );
+        })
+      );
+    },
+    { timezone: TZ }
+  );
+}
+
 initDb()
   .then(() => {
     startVolumeControlJobs();
+    startSpotifyPlaylistGuardJobs();
     app.listen(port, () => {
       console.log(`Server listening on port ${port}`);
     });

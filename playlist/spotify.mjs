@@ -166,6 +166,41 @@ export class SpotifyClient {
     await this.#postWithParams("/me/player/queue", params, { parseResponse: false });
   }
 
+  async playPlaylist(playlistId, deviceId = null) {
+    const safePlaylistId = String(playlistId || "").trim();
+    if (!/^[A-Za-z0-9]+$/.test(safePlaylistId)) {
+      throw new Error("Invalid Spotify playlist ID.");
+    }
+
+    const params = {};
+    const safeDeviceId = typeof deviceId === "string" ? deviceId.trim() : "";
+    if (safeDeviceId) {
+      params.device_id = safeDeviceId;
+    }
+
+    await this.#putWithBodyAndParams(
+      "/me/player/play",
+      params,
+      { context_uri: `spotify:playlist:${safePlaylistId}` },
+      { parseResponse: false }
+    );
+  }
+
+  async setRepeatMode(state, deviceId = null) {
+    const safeState = String(state || "").trim().toLowerCase();
+    if (!["track", "context", "off"].includes(safeState)) {
+      throw new Error("Invalid Spotify repeat state.");
+    }
+
+    const params = { state: safeState };
+    const safeDeviceId = typeof deviceId === "string" ? deviceId.trim() : "";
+    if (safeDeviceId) {
+      params.device_id = safeDeviceId;
+    }
+
+    await this.#putWithParams("/me/player/repeat", params, { parseResponse: false });
+  }
+
   async setVolume(volumePct) {
     const pct = Math.max(0, Math.min(100, Math.round(volumePct)));
     await this.#put("/me/player/volume", { volume_percent: pct });
@@ -179,6 +214,21 @@ export class SpotifyClient {
   async #put(path, params = {}) {
     const search = new URLSearchParams(params).toString();
     return this.#request(`${BASE_URL}${path}${search ? `?${search}` : ""}`, { method: "PUT" });
+  }
+
+  async #putWithParams(path, params = {}, { parseResponse = true } = {}) {
+    const search = new URLSearchParams(params).toString();
+    return this.#request(`${BASE_URL}${path}${search ? `?${search}` : ""}`, {
+      method: "PUT",
+    }, 0, { parseResponse });
+  }
+
+  async #putWithBodyAndParams(path, params = {}, body = {}, { parseResponse = true } = {}) {
+    const search = new URLSearchParams(params).toString();
+    return this.#request(`${BASE_URL}${path}${search ? `?${search}` : ""}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }, 0, { parseResponse });
   }
 
   async #post(path, body = {}) {
