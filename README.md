@@ -70,8 +70,8 @@ Operational entry points:
 - `POST /api/spotify/playlist-guard` to ensure the gym playlist is active and repeating.
   Defaults to immediate mode; pass `mode=soft` for handoff mode.
 
-Search excludes explicit tracks by default. Queueing always rejects explicit tracks
-server-side.
+Search excludes explicit tracks by default unless `include_explicit=true` is sent.
+Queueing accepts both explicit and non-explicit tracks.
 
 The server also runs the playlist guard every day at 07:00 and 15:00
 `America/Argentina/Buenos_Aires` in soft handoff mode. If the gym playlist is

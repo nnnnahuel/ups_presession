@@ -1732,10 +1732,6 @@ app.post("/api/spotify/queue", requirePlaylistAuth, async (req, res) => {
   try {
     const result = await withStudioSpotify(req.body?.studio ?? req.query.studio, async (client, config) => {
       const track = await client.getTrack(trackId);
-      if (track?.explicit === true) {
-        throw spotifyEndpointError(422, "explicit_track_blocked", "Explicit tracks are not allowed.");
-      }
-
       await client.addToQueue(track.uri, config.deviceId || null);
 
       return {
