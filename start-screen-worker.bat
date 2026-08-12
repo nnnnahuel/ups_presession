@@ -17,7 +17,7 @@ if "%LOCATION_ID%"=="" (
 )
 
 if "%SERVER_URL%"=="" (
-  set SERVER_URL=https://equipo.up-s.ar
+  set SERVER_URL=https://sesiones.up-s.ar
 )
 
 echo Starting distributed worker %DEVICE_ID% at %LOCATION_ID% against %SERVER_URL%

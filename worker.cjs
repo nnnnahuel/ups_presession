@@ -4,7 +4,7 @@ const { execFile } = require("child_process");
 
 const DEVICE_ID = process.env.DEVICE_ID;
 const LOCATION_ID = process.env.LOCATION_ID;
-const SERVER_URL = (process.env.SERVER_URL || process.env.APP_BASE_URL || "https://equipo.up-s.ar").replace(/\/+$/, "");
+const SERVER_URL = (process.env.SERVER_URL || process.env.APP_BASE_URL || "https://sesiones.up-s.ar").replace(/\/+$/, "");
 const WORKER_TOKEN = process.env.WORKER_TOKEN || "";
 const NIRCMD_PATH = process.env.NIRCMD_PATH || "nircmd.exe";
 const HEARTBEAT_INTERVAL_MS = 5000;

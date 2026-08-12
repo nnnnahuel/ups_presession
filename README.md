@@ -82,6 +82,13 @@ waits past the crossfade window, then anchors playback back to the gym playlist
 from that same track and sets repeat mode to `context`. If the queued track does
 not start before the timeout, it does not cut the current music.
 
+## Studio screen worker
+
+The Windows worker that applies system-volume commands connects to
+`https://sesiones.up-s.ar` by default. Set `SERVER_URL` only when deliberately
+targeting another deployment. The worker also requires `DEVICE_ID`,
+`LOCATION_ID`, and the matching `WORKER_TOKEN`.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
