@@ -18,6 +18,7 @@ export class SpotifyClient {
 
     const response = await fetch(TOKEN_URL, {
       method: "POST",
+      signal: AbortSignal.timeout(15000),
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Authorization:
@@ -146,6 +147,10 @@ export class SpotifyClient {
     return this.#get("/me/player");
   }
 
+  async getQueue() {
+    return this.#get("/me/player/queue");
+  }
+
   async getAvailableDevices() {
     const data = await this.#get("/me/player/devices");
     return data.devices || [];
@@ -271,6 +276,7 @@ export class SpotifyClient {
     }
 
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(15000),
       ...options,
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
@@ -288,7 +294,10 @@ export class SpotifyClient {
 
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(`Spotify API error ${response.status} on ${url}: ${detail}`);
+      const error = new Error(`Spotify API error ${response.status} on ${url}: ${detail}`);
+      error.statusCode = response.status;
+      error.retryAfterMs = (Number.parseInt(response.headers.get("Retry-After") || "60", 10) || 60) * 1000;
+      throw error;
     }
 
     if (!parseResponse || response.status === 204) {

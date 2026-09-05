@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import { getRecentLogs, initPlaylistTables } from "./playlist/state.mjs";
 import { runPlaylistRotation } from "./playlist/rotate.mjs";
 import { SpotifyClient } from "./playlist/spotify.mjs";
+import { acceptFairRequest, initFairQueue, runFairQueueTick, validateFairRequest } from "./playlist/fair-queue.mjs";
 import cron from "node-cron";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -161,6 +162,7 @@ async function initDb() {
   `);
 
   await initPlaylistTables(pool);
+  await initFairQueue(pool);
 }
 
 const app = express();
@@ -1730,9 +1732,22 @@ app.post("/api/spotify/queue", requirePlaylistAuth, async (req, res) => {
   }
 
   try {
+    const fairRequest = req.body?.athlete_id != null || req.body?.request_id != null;
+    if (fairRequest) {
+      validateFairRequest({ athleteId: req.body.athlete_id, requestId: req.body.request_id });
+      if (!pool) throw spotifyEndpointError(503, "music_queue_unavailable", "Music queue storage is unavailable.");
+    }
     const result = await withStudioSpotify(req.body?.studio ?? req.query.studio, async (client, config) => {
       const track = await client.getTrack(trackId);
-      await client.addToQueue(track.uri, config.deviceId || null);
+      let queueRequest = null;
+      if (fairRequest) {
+        queueRequest = await acceptFairRequest(pool, {
+          athleteId: req.body.athlete_id, requestId: req.body.request_id, studio: config.id, track: mapSpotifyTrack(track),
+        });
+      } else {
+        // Preserve callers outside the athlete app during the staged rollout.
+        await client.addToQueue(track.uri, config.deviceId || null);
+      }
 
       return {
         ok: true,
@@ -1742,6 +1757,8 @@ app.post("/api/spotify/queue", requirePlaylistAuth, async (req, res) => {
         },
         device_id: config.deviceId || null,
         track: mapSpotifyTrack(track),
+        queue_mode: fairRequest ? "athlete_rotation" : "spotify",
+        queue_request: queueRequest,
       };
     });
 
@@ -2349,6 +2366,19 @@ function startSpotifyPlaylistGuardJobs() {
 
 initDb()
   .then(() => {
+    let fairQueueRunning = false;
+    const fairQueueTimer = setInterval(async () => {
+      if (fairQueueRunning) return;
+      fairQueueRunning = true;
+      try {
+        await runFairQueueTick({ pool, withStudioSpotify });
+      } catch (error) {
+        console.error('[fair-music]', error.message);
+      } finally {
+        fairQueueRunning = false;
+      }
+    }, 5000);
+    fairQueueTimer.unref();
     startVolumeControlJobs();
     startSpotifyPlaylistGuardJobs();
     app.listen(port, () => {
