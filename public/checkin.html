@@ -862,6 +862,18 @@
         mobileScanRegions = buildMobileScanRegions(width, height);
       }
 
+      function argentinaDayRange(now) {
+        const parts = new Intl.DateTimeFormat("en", {
+          timeZone: "America/Argentina/Buenos_Aires",
+          year: "numeric", month: "2-digit", day: "2-digit"
+        }).formatToParts(now);
+        const date = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+        // Argentina uses UTC-03:00; never use the scanner computer's timezone.
+        const start = new Date(`${date.year}-${date.month}-${date.day}T00:00:00-03:00`);
+        const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+        return { start: start.toISOString(), end: end.toISOString() };
+      }
+
       async function saveCheckin(qrText) {
         const cleaned = String(qrText || "").trim();
 
@@ -902,9 +914,10 @@
           }
 
           const athleteName = String(profiles[0]?.full_name || "").trim();
-          const todayIso = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
+          const checkedInAt = new Date(now);
+          const day = argentinaDayRange(checkedInAt);
           const duplicateResponse = await fetch(
-            `${SUPABASE_URL}/rest/v1/attendance_events?qr_code=eq.${encodeURIComponent(cleaned)}&checked_in_at=gte.${todayIso}&source=eq.qr_scanner&select=id`,
+            `${SUPABASE_URL}/rest/v1/attendance_events?qr_code=eq.${encodeURIComponent(cleaned)}&checked_in_at=gte.${day.start}&checked_in_at=lt.${day.end}&source=eq.qr_scanner&select=id`,
             { headers }
           );
           if (!duplicateResponse.ok) {
@@ -930,7 +943,7 @@
             body: JSON.stringify({
               qr_code: cleaned,
               athlete_name: athleteName,
-              checked_in_at: new Date().toISOString(),
+              checked_in_at: checkedInAt.toISOString(),
               source: "qr_scanner"
             })
           });
