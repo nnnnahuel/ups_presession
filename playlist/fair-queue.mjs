@@ -1,5 +1,4 @@
 // Keep requests here until their turn; Spotify's native queue cannot be reordered.
-const HANDOFF_WINDOW_MS = 15000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 export function validateFairRequest({ athleteId, requestId }) {
@@ -71,7 +70,7 @@ export function dispatchWindowOpen(playback, deviceId) {
   const duration = playback.item.duration_ms;
   const progress = playback.progress_ms;
   return Number.isFinite(duration) && Number.isFinite(progress)
-    && duration > 0 && progress >= 0 && duration - progress <= HANDOFF_WINDOW_MS;
+    && duration > 0 && progress >= 0;
 }
 
 export function wasDefinitelyRejected(error) {
@@ -104,7 +103,9 @@ export async function advanceFairQueue({ store, spotify, deviceId }) {
       return { action: 'awaiting_delivery_observation', request_id: outstanding.id };
     }
   }
-  if (!dispatchWindowOpen(playback, deviceId)) return { action: 'waiting_for_song_end' };
+  // Keep exactly one request ready. Waiting for the last seconds can miss a
+  // crossfade, skip or delayed poll and leave the ordinary playlist playing.
+  if (!dispatchWindowOpen(playback, deviceId)) return { action: 'waiting_for_active_playback' };
   const next = await store.next();
   if (!next) return { action: 'empty' };
   // Do not mistake the existing playback of the same URI for our new request.
@@ -160,14 +161,14 @@ export async function runFairQueueTick({ pool, withStudioSpotify, logger = conso
     WHERE status IN ('waiting', 'sending', 'sent') AND expires_at <= NOW()`);
   const { rows } = await pool.query(`SELECT DISTINCT studio FROM athlete_music_requests
     WHERE status IN ('waiting', 'sending', 'sent')`);
-  for (const { studio } of rows) {
+  await Promise.all(rows.map(async ({ studio }) => {
     const db = await pool.connect();
     const lock = `ups-athlete-music:${studio}`;
     let locked = false;
     try {
       const result = await db.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [lock]);
       locked = result.rows[0].locked;
-      if (!locked) continue;
+      if (!locked) return;
       await withStudioSpotify(studio, async (spotify, config) => {
         const result = await advanceFairQueue({ store: postgresQueueStore(db, studio), spotify, deviceId: config.deviceId });
         if (result.action === 'dispatched') logger.log('[fair-music]', studio, result);
@@ -181,5 +182,5 @@ export async function runFairQueueTick({ pool, withStudioSpotify, logger = conso
         db.release();
       }
     }
-  }
+  }));
 }

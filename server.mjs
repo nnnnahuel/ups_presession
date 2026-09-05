@@ -2366,17 +2366,12 @@ function startSpotifyPlaylistGuardJobs() {
 
 initDb()
   .then(() => {
-    let fairQueueRunning = false;
-    const fairQueueTimer = setInterval(async () => {
-      if (fairQueueRunning) return;
-      fairQueueRunning = true;
-      try {
-        await runFairQueueTick({ pool, withStudioSpotify });
-      } catch (error) {
+    // Per-studio database locks prevent duplicate dispatches. A slow Spotify
+    // account must not stop polling the other studio.
+    const fairQueueTimer = setInterval(() => {
+      runFairQueueTick({ pool, withStudioSpotify }).catch(error => {
         console.error('[fair-music]', error.message);
-      } finally {
-        fairQueueRunning = false;
-      }
+      });
     }, 5000);
     fairQueueTimer.unref();
     startVolumeControlJobs();

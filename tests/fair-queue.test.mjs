@@ -56,17 +56,50 @@ test('never fills the native queue before the current request plays', async () =
   assert.deepEqual(f.state.sent, ['spotify:track:t1']);
 });
 
-test('waits near the end, leaves paused playback and another device alone', async () => {
+test('prepares a request at the beginning of the song instead of missing the final seconds', async () => {
   const f = fixture([song(1, 'Ana')]);
   f.state.playback.progress_ms = 1000;
-  assert.equal((await f.tick()).action, 'waiting_for_song_end');
-  f.state.playback.progress_ms = 170000;
+  assert.equal((await f.tick()).action, 'dispatched');
+  assert.deepEqual(f.state.sent, ['spotify:track:t1']);
+});
+
+test('leaves paused playback and another device alone', async () => {
+  const f = fixture([song(1, 'Ana')]);
   f.state.playback.is_playing = false;
-  assert.equal((await f.tick()).action, 'waiting_for_song_end');
+  assert.equal((await f.tick()).action, 'waiting_for_active_playback');
   f.state.playback.is_playing = true;
   f.state.playback.device.id = 'another-speaker';
   assert.equal((await f.tick()).action, 'wrong_device');
   assert.equal(f.state.sent.length, 0);
+});
+
+test('prepares only one successor as soon as the previous request starts playing', async () => {
+  const f = fixture([song(1, 'Ana'), song(2, 'Bruno'), song(3, 'Ana')]);
+  await f.tick();
+  f.state.playback.item.uri = 'spotify:track:t1';
+  f.state.playback.progress_ms = 1000;
+  f.state.queue = [];
+  assert.equal((await f.tick()).request_id, 2);
+  for (let i = 0; i < 10; i++) await f.tick();
+  assert.deepEqual(f.state.sent, ['spotify:track:t1', 'spotify:track:t2']);
+});
+
+test('a slow Spotify account in A does not stop B being polled', async () => {
+  let finishA;
+  const blockedA = new Promise(resolve => { finishA = resolve; });
+  let reachedB = false;
+  const pool = {
+    query: async sql => ({ rows: sql.startsWith('SELECT DISTINCT') ? [{ studio: 'studio-a' }, { studio: 'studio-b' }] : [] }),
+    connect: async () => ({ query: async () => ({ rows: [{ locked: true }] }), release() {} }),
+  };
+  const tick = runFairQueueTick({ pool, withStudioSpotify: async studio => {
+    if (studio === 'studio-a') await blockedA;
+    else reachedB = true;
+  } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reachedB, true);
+  finishA();
+  await tick;
 });
 
 test('does not submit behind repeat-one or malformed playback', () => {
