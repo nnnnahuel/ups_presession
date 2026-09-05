@@ -157,7 +157,7 @@ export function postgresQueueStore(db, studio) {
 export async function runFairQueueTick({ pool, withStudioSpotify, logger = console }) {
   if (!pool) return;
   await pool.query(`UPDATE athlete_music_requests SET status = 'expired'
-    WHERE status = 'waiting' AND expires_at <= NOW()`);
+    WHERE status IN ('waiting', 'sending', 'sent') AND expires_at <= NOW()`);
   const { rows } = await pool.query(`SELECT DISTINCT studio FROM athlete_music_requests
     WHERE status IN ('waiting', 'sending', 'sent')`);
   for (const { studio } of rows) {
