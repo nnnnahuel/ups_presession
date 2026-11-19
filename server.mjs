@@ -2219,6 +2219,9 @@ function normalizeScreenLobbyPayload(data, studio) {
           name: athlete.name.trim().slice(0, 40),
           checked_in_at: parseIsoTimestamp(athlete.checked_in_at),
           first_session: athlete.first_session === true,
+          session_number:
+            Number.isSafeInteger(athlete.session_number) && athlete.session_number >= 1 ? athlete.session_number : null,
+          milestone: athlete.milestone === true,
         })),
     };
   }

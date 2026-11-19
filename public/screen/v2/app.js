@@ -1,5 +1,7 @@
 import { VOICE_LINES } from "/screen/v2/voice-lines.js";
 import {
+  DEMO_DEFAULT_COUNT,
+  DEMO_ROSTER,
   MIN,
   SEC,
   computeView,
@@ -10,7 +12,6 @@ import {
   hourStartOf,
   hourStartOfIso,
   musicShouldBeLow,
-  pad,
   sameDayAt,
   wallTime,
 } from "/screen/v2/timeline.js";
@@ -27,6 +28,8 @@ const TEXT = {
   },
   idleNext: (time) => `Próximo turno ${time}`,
   namesTitle: (time, coach) => (coach ? `Turno ${time} · Coach ${coach}` : `Turno ${time}`),
+  sessionLabel: "Sesión",
+  firstSessionLabel: "Primera sesión",
   legend: ["Inicio", "Series", "Última serie", "Fin"],
   gate: { title: "Activar sonido", hint: "Tocá la pantalla o apretá cualquier tecla" },
   soundMuted: "Sin voz",
@@ -66,6 +69,8 @@ const SIM_START = parseClockParam(params.get("now"));
 const SPEED = clamp(Number.parseFloat(params.get("speed")) || 1, 0.1, 600);
 const SIMULATED = SIM_START !== null || SPEED !== 1;
 const DEMO = parseDemoParam(params.get("demo"));
+// ?athletes=1..8: how many demo athletes (default 6). Not ?demo=N, because ?demo=1 already means "demo on".
+const DEMO_COUNT = clamp(Number.parseInt(params.get("athletes"), 10) || DEMO_DEFAULT_COUNT, 1, DEMO_ROSTER.length);
 const MUTE = isTrue(params.get("mute"));
 const TEST_MODE = SIMULATED || DEMO !== null; // never touches the studio volume, never sends heartbeats
 const RATE = SIMULATED ? SPEED : 1;
@@ -169,7 +174,7 @@ const schedule = {
     return classMemory.has(classStart);
   },
   lobbyFor(classStart, now) {
-    if (DEMO) return demoHasClass(classStart) ? demoLobby(classStart, now) : null;
+    if (DEMO) return demoHasClass(classStart) ? demoLobby(classStart, now, DEMO_COUNT) : null;
     const data = portalData();
     if (!data || !data.lobby || hourStartOfIso(data.lobby.starts_at) !== classStart) return null;
     return data.lobby;
@@ -196,6 +201,7 @@ const el = {
   sub: $("sub"),
   fill: $("fill"),
   legend: [...$("legend").children],
+  lobby: $("lobby"),
   lobbyTitle: $("lobbyTitle"),
   names: $("names"),
   gate: $("gate"),
@@ -271,7 +277,8 @@ function render(view) {
   previous = view;
 }
 
-// Keyed name slots, reordered with a FLIP animation when the server order changes.
+// Keyed athlete cards, reordered with a FLIP animation when the server order changes.
+// Left to right is the portal order; the session number is the hero of each card.
 const slots = new Map();
 let namesKey = "";
 let namesShown = false;
@@ -279,9 +286,19 @@ let namesClearTimer = 0;
 
 function createSlot() {
   const li = document.createElement("li");
-  li.className = "slot";
-  li.innerHTML = '<span class="idx"></span><span class="pip"></span><span class="name"></span>';
+  li.className = "athlete";
+  li.innerHTML = '<span class="tag"></span><span class="sn"></span><span class="name"></span><i class="rule"></i>';
   return li;
+}
+
+function fillSlot(li, athlete) {
+  const hasNumber = athlete.number !== null;
+  li.classList.toggle("no-number", !hasNumber);
+  li.classList.toggle("first", athlete.first && hasNumber);
+  li.classList.toggle("milestone", athlete.milestone && hasNumber);
+  setText(li.querySelector(".tag"), hasNumber ? (athlete.first ? TEXT.firstSessionLabel : TEXT.sessionLabel) : "");
+  setText(li.querySelector(".sn"), hasNumber ? String(athlete.number) : "");
+  setText(li.querySelector(".name"), athlete.name);
 }
 
 function clearSlots() {
@@ -325,14 +342,17 @@ function renderNames(names) {
         li.addEventListener("animationend", () => li.classList.remove("enter"), { once: true });
       }
     }
-    setText(li.querySelector(".name"), athlete.name);
-    setText(li.querySelector(".idx"), pad(index + 1));
+    fillSlot(li, athlete);
     const wasLit = li.classList.contains("lit");
     li.classList.toggle("lit", athlete.lit);
-    if (athlete.lit && !wasLit && !appearing) retrigger(li, "ignite", 1300);
+    if (athlete.lit && !wasLit && !appearing) retrigger(li, "ignite", 1100);
     el.names.appendChild(li);
     wanted.add(athlete.id);
   });
+  // Every number in the row shares one size, set by the longest number (3 digits fit at full size).
+  const digits = Math.max(1, ...names.athletes.map((a) => (a.number === null ? 0 : String(a.number).length)));
+  el.names.style.setProperty("--digits", String(digits));
+  el.lobby.classList.toggle("compact", names.athletes.every((a) => a.number === null));
   for (const [id, li] of slots) {
     if (!wanted.has(id)) {
       li.remove();
@@ -360,21 +380,27 @@ function renderNames(names) {
       })
     );
   }
-  requestAnimationFrame(fitNames);
+  fitNames();
 }
 
-// Long names shrink to fit their slot instead of overflowing.
+// Long names (and the «Primera sesión» label) shrink to fit their card: always one line, never cut.
+// The scale is a transform, so the measured width is always the natural one.
+function fitText(node, available) {
+  const natural = node.scrollWidth;
+  node.style.setProperty("--fit", natural > available && natural > 0 ? String(available / natural) : "1");
+}
+
 function fitNames() {
   for (const li of slots.values()) {
-    const name = li.querySelector(".name");
-    name.style.setProperty("--fit", "1");
-    const available = li.clientWidth * 0.84;
-    const natural = name.getBoundingClientRect().width;
-    if (natural > available && natural > 0) name.style.setProperty("--fit", String(Math.max(0.55, available / natural)));
+    const available = li.clientWidth;
+    if (!available) continue;
+    fitText(li.querySelector(".name"), available);
+    fitText(li.querySelector(".tag"), available);
   }
 }
 
 window.addEventListener("resize", () => requestAnimationFrame(fitNames));
+document.fonts.addEventListener("loadingdone", () => requestAnimationFrame(fitNames));
 
 // ===== Audio =====
 const SPEAKER_ICON =

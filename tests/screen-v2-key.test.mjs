@@ -33,7 +33,10 @@ async function startPortal() {
         lobby: {
           starts_at: "2026-11-18T21:00:00-03:00",
           coach: "Joaquín",
-          athletes: [{ id: "a1b2c3", name: "Marta", checked_in_at: "2026-11-18T20:58:03-03:00", first_session: false }],
+          athletes: [
+            { id: "a1b2c3", name: "Marta", checked_in_at: "2026-11-18T20:58:03-03:00", first_session: false, session_number: 100, milestone: true },
+            { id: "d4e5f6", name: "Luna", checked_in_at: null, first_session: false, session_number: "12", milestone: "yes" },
+          ],
         },
       })
     );
@@ -155,8 +158,12 @@ test("the right key reads the lobby through the portal and records the heartbeat
   assert.equal(answer.status, 200);
   assert.equal(answer.body.ok, true);
   assert.deepEqual(
-    answer.body.lobby.athletes.map((a) => a.name),
-    ["Marta"]
+    answer.body.lobby.athletes.map((a) => [a.name, a.session_number, a.milestone]),
+    [
+      ["Marta", 100, true],
+      ["Luna", null, false],
+    ],
+    "session_number and milestone pass through; anything that is not a whole number or true is dropped"
   );
   assert.equal(portal.requests.length, 1);
   assert.equal(portal.requests[0].url, "/api/studio-screen/lobby/?studio=A");

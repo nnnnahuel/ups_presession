@@ -121,8 +121,10 @@ pantalla hable sin que nadie la toque, abrí Chrome con este acceso directo
 `/screen/v2?demo=1&now=20:57:00&speed=10&mute=1`
 
 - `now=HH:MM:SS` arranca un reloj simulado a esa hora; `speed=N` lo acelera.
-- `demo=1` usa 6 nombres falsos que se van encendiendo; `demo=first` simula la
-  primera clase del bloque (sin clase anterior) y `demo=idle`, un día sin clases.
+- `demo=1` usa 6 atletas falsos (con su número de sesión, una primera sesión y
+  un hito) que se van encendiendo; `athletes=N` (de 1 a 8) cambia cuántos son.
+  `demo=first` simula la primera clase del bloque (sin clase anterior) y
+  `demo=idle`, un día sin clases.
 - `mute=1` calla la voz.
 - Con `now`, `speed` o `demo` la pantalla nunca toca el volumen ni manda el
   latido. **Sin esos parámetros actúa sobre el estudio de verdad** (baja la
@@ -143,7 +145,9 @@ Endpoints:
 - `GET /screen/api/lobby?studio=A|B` (con `X-Screen-Key`) pide al portal
   `${UPS_PORTAL_API_BASE_URL}/api/studio-screen/lobby/?studio=A` con
   `Authorization: Bearer ${STUDIO_SCREEN_API_TOKEN}` y guarda la respuesta
-  4 segundos. Sin clave correcta responde `{"ok": false}` sin preguntarle nada
+  4 segundos. De cada atleta pasa `id`, `name`, `checked_in_at`,
+  `first_session`, `session_number` (entero ≥ 1, si no `null`: la ficha muestra
+  solo el nombre) y `milestone`. Sin clave correcta responde `{"ok": false}` sin preguntarle nada
   al portal; sin las variables del portal o si el portal falla, también
   `{"ok": false}`. En esos casos la pantalla sigue por reloj como si hubiera
   clase todas las horas, sin nombres.

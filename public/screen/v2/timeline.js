@@ -104,7 +104,18 @@ function namesFor(schedule, classStart, now) {
     let id = String(athlete.id || `athlete-${index}`);
     if (seen.has(id)) id = `${id}-${index}`;
     seen.add(id);
-    return { id, name: String(athlete.name || ""), lit: Boolean(athlete.checked_in_at) };
+    const first = athlete.first_session === true;
+    const session =
+      Number.isSafeInteger(athlete.session_number) && athlete.session_number >= 1 ? athlete.session_number : null;
+    return {
+      id,
+      name: String(athlete.name || ""),
+      lit: Boolean(athlete.checked_in_at),
+      first,
+      milestone: athlete.milestone === true,
+      // A first session is session 1; without session_number (older bridge) the card shows only the name.
+      number: first ? 1 : session,
+    };
   });
   return {
     classStart,
@@ -208,15 +219,19 @@ export function musicShouldBeLow(now, schedule, { lineDurationMs, leadMs, tailMs
   return false;
 }
 
-// ===== Demo data (?demo=1) =====
+// ===== Demo data (?demo=1, ?athletes=1..8) =====
+// scan: seconds from the class start (null = never scans). The first six are the default demo.
 export const DEMO_ROSTER = [
-  { id: "demo-agustina", name: "Agustina", firstSession: true, scan: -150 },
-  { id: "demo-marta", name: "Marta", scan: -170 },
-  { id: "demo-luna", name: "Luna", scan: -125 },
-  { id: "demo-tomas", name: "Tomás", scan: -55 },
-  { id: "demo-belen", name: "Belén", scan: 95 },
-  { id: "demo-facundo", name: "Facundo", scan: null },
+  { id: "demo-agustina", name: "Agustina", session: 1, firstSession: true, scan: -150 },
+  { id: "demo-marta", name: "Marta", session: 100, milestone: true, scan: -170 },
+  { id: "demo-luna", name: "Luna", session: 247, scan: -125 },
+  { id: "demo-tomas", name: "Tomás", session: 12, scan: -70 },
+  { id: "demo-maximiliano", name: "Maximiliano", session: 88, scan: 40 },
+  { id: "demo-belen", name: "Belén", session: 31, scan: null },
+  { id: "demo-valentina", name: "Valentina", session: 54, scan: -100 },
+  { id: "demo-bruno", name: "Bruno", session: 7, scan: 20 },
 ];
+export const DEMO_DEFAULT_COUNT = 6;
 
 // Same order the portal sends: first sessions, then by scan time, then not scanned.
 export function sortLikePortal(athletes) {
@@ -231,13 +246,15 @@ export function sortLikePortal(athletes) {
     .map(({ athlete }) => athlete);
 }
 
-export function demoLobby(classStart, now, roster = DEMO_ROSTER) {
-  const athletes = roster.map((a) => {
+export function demoLobby(classStart, now, count = DEMO_DEFAULT_COUNT) {
+  const athletes = DEMO_ROSTER.slice(0, count).map((a) => {
     const scannedAt = a.scan === null ? null : classStart + a.scan * SEC;
     return {
       id: a.id,
       name: a.name,
       first_session: Boolean(a.firstSession),
+      session_number: a.session,
+      milestone: Boolean(a.milestone),
       checked_in_at: scannedAt !== null && now >= scannedAt ? new Date(scannedAt).toISOString() : null,
     };
   });

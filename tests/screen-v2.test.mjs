@@ -63,8 +63,8 @@ test(":00 starts the new class and the names stay until minute 5", () => {
   const start = view("21:00", schedule);
   assert.deepEqual([start.mode, start.stage, start.inverted, start.num], ["class", "warmup", false, "55:00"]);
   assert.equal(start.names.total, 6);
-  assert.equal(view("21:01:34", schedule).names.lit, 4);
-  assert.equal(view("21:01:35", schedule).names.lit, 5);
+  assert.equal(view("21:00:39", schedule).names.lit, 4);
+  assert.equal(view("21:00:40", schedule).names.lit, 5);
   assert.notEqual(view("21:04:59", schedule).names, null);
   assert.equal(view("21:05", schedule).names, null);
 });
@@ -158,17 +158,56 @@ test("class memory keeps the hour that just ended and drops cancelled lobbies", 
   assert.ok(!memory.has(at("20:00")), "old hours are pruned");
 });
 
-test("demo lobby keeps the portal order", () => {
+test("demo lobby keeps the portal order and shows every card state", () => {
   const lobby = demoLobby(at("21:00"), at("21:00"));
   assert.deepEqual(
-    lobby.athletes.map((a) => [a.name, Boolean(a.checked_in_at)]),
+    lobby.athletes.map((a) => [a.name, Boolean(a.checked_in_at), a.session_number, a.first_session, a.milestone]),
     [
-      ["Agustina", true],
+      ["Agustina", true, 1, true, false],
+      ["Marta", true, 100, false, true],
+      ["Luna", true, 247, false, false],
+      ["Tomás", true, 12, false, false],
+      ["Maximiliano", false, 88, false, false],
+      ["Belén", false, 31, false, false],
+    ]
+  );
+  assert.equal(demoLobby(at("21:00"), at("21:00"), 8).athletes.length, 8);
+  assert.deepEqual(
+    demoLobby(at("21:00"), at("20:57:20"), 2).athletes.map((a) => [a.name, Boolean(a.checked_in_at)]),
+    [
+      ["Agustina", false],
       ["Marta", true],
-      ["Luna", true],
-      ["Tomás", true],
-      ["Belén", false],
-      ["Facundo", false],
+    ]
+  );
+});
+
+test("athlete cards carry the session number, first session and milestone", () => {
+  const athletes = [
+    { id: "a", name: "Agustina", first_session: true, session_number: 1, checked_in_at: "2026-11-18T20:58:00-03:00" },
+    { id: "b", name: "Marta", session_number: 100, milestone: true },
+    { id: "c", name: "Luna", session_number: 247 },
+    { id: "d", name: "Tomás" },
+    { id: "e", name: "Belén", session_number: 0 },
+    { id: "f", name: "Bruno", session_number: "12", milestone: "yes" },
+    { id: "g", name: "Facundo", session_number: 4.5 },
+    { id: "h", name: "Sol", first_session: true },
+  ];
+  const schedule = {
+    hasClassAt: () => true,
+    lobbyFor: (classStart) => ({ starts_at: new Date(classStart).toISOString(), coach: "Joaquín", athletes }),
+  };
+  const cards = view("20:58:30", schedule).names.athletes;
+  assert.deepEqual(
+    cards.map((c) => [c.name, c.number, c.first, c.milestone, c.lit]),
+    [
+      ["Agustina", 1, true, false, true],
+      ["Marta", 100, false, true, false],
+      ["Luna", 247, false, false, false],
+      ["Tomás", null, false, false, false],
+      ["Belén", null, false, false, false],
+      ["Bruno", null, false, false, false],
+      ["Facundo", null, false, false, false],
+      ["Sol", 1, true, false, false],
     ]
   );
 });
