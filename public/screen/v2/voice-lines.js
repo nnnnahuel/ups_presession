@@ -1,9 +1,9 @@
 // Frases de la voz de la pantalla /screen/v2.
 //
-// Este archivo lo leen la pantalla y el servidor: /screen/tts solo genera audio
-// para estas frases (más las viejas de /screen). Cambiar un texto acá alcanza;
-// la primera vez que suene el texto nuevo se paga un audio a ElevenLabs y queda
-// guardado en la base.
+// Cada clave es un audio grabado: public/screen/v2/voice/<clave>.mp3 (con el efecto
+// de anunciador ya aplicado). Este archivo es el registro de qué dice cada uno; la
+// pantalla usa las claves para cargarlos. Cambiar un texto acá NO cambia lo que
+// suena: hay que grabar y reemplazar el archivo.
 export const VOICE_LINES = {
   count5: "Cinco",
   count4: "Cuatro",

@@ -8,7 +8,6 @@ import { getRecentLogs, initPlaylistTables } from "./playlist/state.mjs";
 import { runPlaylistRotation } from "./playlist/rotate.mjs";
 import { SpotifyClient } from "./playlist/spotify.mjs";
 import { acceptFairRequest, initFairQueue, runFairQueueTick, validateFairRequest } from "./playlist/fair-queue.mjs";
-import { VOICE_LINES as SCREEN_V2_VOICE_LINES } from "./public/screen/v2/voice-lines.js";
 import cron from "node-cron";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -55,8 +54,8 @@ const ttsCache = new Map();
 const ttsInflight = new Map();
 
 // /screen/tts only speaks these texts. Each new text is a paid ElevenLabs call,
-// so the endpoint must not accept arbitrary input.
-// Legacy lines: the exact phrases public/screen/script.js picks from at :45 and :55.
+// so the endpoint must not accept arbitrary input. These are the exact phrases
+// public/screen/script.js picks from at :45 and :55; /screen/v2 plays recorded files.
 const LEGACY_SCREEN_TTS_LINES = [
   "¡Ya quedan diez minutos!, ¡A terminar fuerte!",
   "¡Los últimos diez minutos!, ¡Vamos con todo!",
@@ -64,9 +63,7 @@ const LEGACY_SCREEN_TTS_LINES = [
   "¡Sesión completada!, ¡Buen trabajo!",
   "¡Entrenamiento terminado!, ¡Excelente esfuerzo!",
 ];
-const ALLOWED_TTS_TEXTS = new Set(
-  [...LEGACY_SCREEN_TTS_LINES, ...Object.values(SCREEN_V2_VOICE_LINES)].map((text) => String(text).trim())
-);
+const ALLOWED_TTS_TEXTS = new Set(LEGACY_SCREEN_TTS_LINES.map((text) => String(text).trim()));
 
 // Lobby bridge: the studio screen never talks to the portal directly.
 const UPS_PORTAL_API_BASE_URL = String(process.env.UPS_PORTAL_API_BASE_URL || "").trim().replace(/\/+$/, "");
@@ -2344,13 +2341,16 @@ app.post("/screen/api/display/heartbeat", (req, res) => {
     return;
   }
 
-  const lastCue =
-    typeof req.body?.lastCue === "string" && /^[a-z0-9_-]{1,32}$/i.test(req.body.lastCue) ? req.body.lastCue : null;
+  const cueId = (value) => typeof value === "string" && /^[a-z0-9_-]{1,32}$/i.test(value);
+  const lastCue = cueId(req.body?.lastCue) ? req.body.lastCue : null;
+  // Recorded voice files the screen could not load (it stays silent until all of them are in).
+  const voiceMissing = Array.isArray(req.body?.voiceMissing) ? req.body.voiceMissing.filter(cueId).slice(0, 16) : [];
 
   screenDisplays.set(studio, {
     studio,
     audioUnlocked: req.body?.audioUnlocked === true,
     voiceReady: req.body?.voiceReady === true,
+    voiceMissing,
     lastCue,
     lastCueAt: lastCue ? parseIsoTimestamp(req.body?.lastCueAt) : null,
     lastSeenAt: new Date().toISOString(),

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { VOICE_LINES } from "../public/screen/v2/voice-lines.js";
 import {
   CUES,
@@ -9,8 +11,13 @@ import {
   dueCues,
   hourStartOf,
   musicShouldBeLow,
+  outputTimeFor,
   sameDayAt,
+  voiceFileUrl,
+  voiceStatus,
 } from "../public/screen/v2/timeline.js";
+
+const v2Dir = fileURLToPath(new URL("../public/screen/v2/", import.meta.url));
 
 const at = (time, day = "2026-11-18") => Date.parse(`${day}T${time.length === 5 ? `${time}:00` : time}-03:00`);
 const OPTIONS = { namesFromMinute: 57, namesUntilMinute: 5, finalCountSeconds: 10 };
@@ -52,6 +59,63 @@ test("voice lines: no minute 20, «Quedan diez minutos» at :45, every cue has i
     ["count5", "count4", "count3", "count2", "count1", "start", "minute45", "end"]
   );
   for (const cue of CUES) assert.equal(typeof VOICE_LINES[cue.line], "string", cue.line);
+});
+
+test("a recorded mp3 exists for every voice line, and nothing else", () => {
+  const keys = Object.keys(VOICE_LINES);
+  assert.deepEqual(readdirSync(`${v2Dir}voice`).sort(), keys.map((key) => `${key}.mp3`).sort());
+  for (const key of keys) {
+    const bytes = readFileSync(`${v2Dir}voice/${key}.mp3`);
+    const id3 = bytes.subarray(0, 3).toString("latin1") === "ID3";
+    const frameSync = bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0;
+    assert.ok(bytes.length > 4000 && (id3 || frameSync), `${key}.mp3 is an mp3`);
+    assert.equal(voiceFileUrl(key), `/screen/v2/voice/${key}.mp3`);
+  }
+});
+
+test("/screen/v2 plays the recorded files and never asks /screen/tts", () => {
+  for (const file of readdirSync(v2Dir).filter((name) => /\.(js|html)$/.test(name))) {
+    assert.ok(!readFileSync(`${v2Dir}${file}`, "utf8").includes("/screen/tts"), `${file} mentions /screen/tts`);
+  }
+  assert.match(readFileSync(`${v2Dir}app.js`, "utf8"), /fetch\(voiceFileUrl\(key\)\)/);
+});
+
+test("«start» fires 0.30 s before the hour; the numbers stay one per second", () => {
+  assert.deepEqual(Object.fromEntries(CUES.map((cue) => [cue.id, cue.offset])), {
+    count5: -5000,
+    count4: -4000,
+    count3: -3000,
+    count2: -2000,
+    count1: -1000,
+    start: -300,
+    minute45: 45 * 60 * 1000,
+    end: 55 * 60 * 1000,
+  });
+  const due = dueCues(at("20:59:59.650"), everyHour, { hasLine: () => true, lookaheadMs: 100, lateMs: 300 });
+  assert.deepEqual(
+    due.map((cue) => [cue.cue.id, cue.at]),
+    [["start", at("21:00") - 300]]
+  );
+});
+
+test("cues wait for the audio output clock to start before being scheduled", () => {
+  // 1 s of sim time per 1000 ms of performance time, sim epoch = performance.now() + 1e12.
+  const epochAtPerf = (perf) => perf + 1e12;
+  assert.equal(outputTimeFor(1e12 + 5000, { contextTime: 0, performanceTime: 0 }, epochAtPerf), null);
+  // Heard at performance 2000 ms is context sample 1.25 s: a sound for sim 5000 ms starts at context 4.25 s.
+  assert.equal(outputTimeFor(1e12 + 5000, { contextTime: 1.25, performanceTime: 2000 }, epochAtPerf), 4.25);
+});
+
+test("a missing recorded file keeps the whole voice silent and is reported", () => {
+  const keys = Object.keys(VOICE_LINES);
+  const loaded = new Map(keys.map((key) => [key, { duration: 1 }]));
+  assert.deepEqual(voiceStatus(keys, loaded), { ready: true, missing: [] });
+
+  loaded.delete("count3");
+  const status = voiceStatus(keys, loaded);
+  assert.deepEqual(status, { ready: false, missing: ["count3"] });
+  const canSpeak = (line) => status.ready && loaded.has(line);
+  assert.deepEqual(dueCues(at("20:59:45"), everyHour, { hasLine: canSpeak, lookaheadMs: 20000, lateMs: 300 }), []);
 });
 
 test("changeover inverts at :55, shows the incoming names at :57 and counts 10 to 1", () => {

@@ -114,7 +114,9 @@ pantalla hable sin que nadie la toque, abrí Chrome con este acceso directo
   resuelve. Con el sonido activo queda un parlante chico abajo a la derecha.
 - Para ver desde afuera si la pantalla está abierta y con sonido:
   `GET /screen/api/health` → campo `screenDisplays` (`online`, `audioUnlocked`,
-  `voiceReady`, `lastCue`, `lastCueAt`). La pantalla avisa cada 30 segundos.
+  `voiceReady`, `voiceMissing`, `lastCue`, `lastCueAt`). La pantalla avisa cada
+  30 segundos. `voiceReady` es verdadero cuando los ocho audios están cargados;
+  si falta alguno, la pantalla sigue andando sin voz y `voiceMissing` dice cuál.
 
 ### Modo de prueba
 
@@ -154,12 +156,25 @@ Endpoints:
 - `POST /screen/api/display/heartbeat` (con `X-Screen-Key`) guarda el estado de
   la pantalla; sin clave correcta no guarda nada. `GET /screen/api/health` es
   público y lo muestra en `screenDisplays`.
-- `POST /screen/tts` solo acepta las frases fijas: las de
-  `public/screen/script.js` y las de `public/screen/v2/voice-lines.js`. Otro
-  texto → 400. El audio queda guardado en la tabla `screen_tts_audio`, así que
-  cada frase se paga a ElevenLabs una sola vez.
-- Las frases de la voz se retocan en `public/screen/v2/voice-lines.js`; los
-  textos de pantalla y los tiempos, arriba de `public/screen/v2/app.js`.
+- `POST /screen/tts` solo acepta las frases fijas de `public/screen/script.js`
+  (la pantalla vieja). Otro texto → 400. El audio queda guardado en la tabla
+  `screen_tts_audio`, así que cada frase se paga a ElevenLabs una sola vez.
+  `/screen/v2` no lo usa.
+
+### Voz de `/screen/v2`
+
+- Son ocho audios grabados en `public/screen/v2/voice/<clave>.mp3` (`count5` a
+  `count1`, `start`, `minute45`, `end`), con el efecto de anunciador ya
+  aplicado. La pantalla los baja como archivos estáticos y los decodifica todos
+  al arrancar; no les agrega filtro ni volumen.
+- `public/screen/v2/voice-lines.js` registra qué dice cada audio. Cambiar un
+  texto ahí no cambia lo que suena: hay que grabar y reemplazar el archivo, con
+  el mismo nombre.
+- Los números suenan uno por segundo, de −5 s a −1 s. `start` sale 0,3 s antes
+  de la hora: el aviso electrónico (que dura 0,4 s) cae justo antes de las :00
+  y la voz entra 0,8 s después del inicio del archivo. `minute45` y `end` salen
+  a las :45:00 y :55:00 exactas.
+- Los textos de pantalla y los tiempos están arriba de `public/screen/v2/app.js`.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

@@ -9,14 +9,17 @@ export const CLASS_END = 55 * MIN;
 export const LAST_STRETCH = 45 * MIN; // «Quedan 10 minutos»: the number turns #04afdd and the voice says it
 export const TZ = "America/Argentina/Buenos_Aires";
 
-// Voice cues, relative to the start of the class they belong to.
+// Voice cues, relative to the start of the class they belong to. Each plays a recorded file.
+// «start», «minute45» and «end» open with a 0.4 s electronic chime and the voice comes in at 0.8 s;
+// «start» fires 0.3 s early so the chime lands just before :00 and the voice about 0.5 s after it.
+export const START_LEAD_MS = 300;
 export const CUES = [
   { id: "count5", line: "count5", offset: -5 * SEC },
   { id: "count4", line: "count4", offset: -4 * SEC },
   { id: "count3", line: "count3", offset: -3 * SEC },
   { id: "count2", line: "count2", offset: -2 * SEC },
   { id: "count1", line: "count1", offset: -1 * SEC },
-  { id: "start", line: "start", offset: 0 },
+  { id: "start", line: "start", offset: -START_LEAD_MS },
   { id: "minute45", line: "minute45", offset: LAST_STRETCH },
   { id: "end", line: "end", offset: CLASS_END },
 ];
@@ -182,6 +185,25 @@ export function computeView(now, schedule, options) {
 }
 
 // ===== Voice =====
+// The recorded phrases live in public/screen/v2/voice/<key>.mp3, one per key of voice-lines.js.
+export const voiceFileUrl = (key) => `/screen/v2/voice/${key}.mp3`;
+
+// The screen speaks only once every file is decoded: a countdown with a missing number would sound
+// broken. `missing` goes to the heartbeat.
+export function voiceStatus(keys, loaded) {
+  const missing = keys.filter((key) => !loaded.has(key));
+  return { ready: missing.length === 0, missing };
+}
+
+// Web Audio time at which to start a sample so it leaves the speakers at `epoch`. `stamp` is
+// AudioContext.getOutputTimestamp(): contextTime is the sample being heard at performanceTime, so
+// output latency is included. Right after the context starts the stamp is all zeros for a moment;
+// then this returns null and the cue waits for the next tick instead of being placed on a dead clock.
+export function outputTimeFor(epoch, stamp, epochAtPerf, rate = 1) {
+  if (!stamp || !(stamp.performanceTime > 0) || !(stamp.contextTime > 0)) return null;
+  return stamp.contextTime + (epoch - epochAtPerf(stamp.performanceTime)) / SEC / rate;
+}
+
 // Cues that should be handed to Web Audio now (within the lookahead, not too late).
 export function dueCues(now, schedule, { hasLine, lookaheadMs, lateMs, rate = 1 }) {
   const hour = hourStartOf(now);

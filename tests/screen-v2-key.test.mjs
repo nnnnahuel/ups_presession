@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { statSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { VOICE_LINES } from "../public/screen/v2/voice-lines.js";
 
 const serverPath = fileURLToPath(new URL("../server.mjs", import.meta.url));
 const SCREEN_KEY = "screen-key-for-tests-7f3a";
@@ -86,7 +88,14 @@ const heartbeat = (server, headers = {}) =>
   fetch(`${server.base}/screen/api/display/heartbeat`, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
-    body: JSON.stringify({ studio: "A", audioUnlocked: true, voiceReady: true, lastCue: "minute45", lastCueAt: "2026-11-18T23:45:00.000Z" }),
+    body: JSON.stringify({
+      studio: "A",
+      audioUnlocked: true,
+      voiceReady: false,
+      voiceMissing: ["count3", "not a key!", 7],
+      lastCue: "minute45",
+      lastCueAt: "2026-11-18T23:45:00.000Z",
+    }),
   }).then((res) => res.json());
 
 const displays = (server) => fetch(`${server.base}/screen/api/health`).then((res) => res.json()).then((body) => body.screenDisplays);
@@ -172,14 +181,14 @@ test("the right key reads the lobby through the portal and records the heartbeat
   assert.equal((await heartbeat(server, { "x-screen-key": SCREEN_KEY })).ok, true);
   const [display] = await displays(server);
   assert.deepEqual(
-    [display.studio, display.audioUnlocked, display.lastCue, display.online],
-    ["A", true, "minute45", true]
+    [display.studio, display.audioUnlocked, display.voiceReady, display.voiceMissing, display.lastCue, display.online],
+    ["A", true, false, ["count3"], "minute45", true]
   );
 
   assert.ok(!server.output().includes(SCREEN_KEY), "the key never reaches the logs");
 });
 
-test("/screen/tts accepts exactly the phrases in voice-lines.js", async (t) => {
+test("/screen/tts only speaks the old /screen phrases; the v2 voice is served as static files", async (t) => {
   const server = await startServer({});
   t.after(() => server.stop());
 
@@ -191,7 +200,12 @@ test("/screen/tts accepts exactly the phrases in voice-lines.js", async (t) => {
     }).then(async (res) => [res.status, (await res.json()).error]);
 
   // Allowed, but this server has no ElevenLabs key and nothing stored: 503 instead of 400.
-  assert.deepEqual(await tts("Quedan diez minutos"), [503, "missing_elevenlabs_api_key"]);
-  assert.deepEqual(await tts("Minuto veinte. Todos en su primera serie"), [400, "text_not_allowed"]);
-  assert.deepEqual(await tts("Quedan diez minutos. Última serie"), [400, "text_not_allowed"]);
+  assert.deepEqual(await tts("¡Sesión completada!, ¡Buen trabajo!"), [503, "missing_elevenlabs_api_key"]);
+  for (const text of Object.values(VOICE_LINES)) assert.deepEqual(await tts(text), [400, "text_not_allowed"], text);
+
+  const file = await fetch(`${server.base}/screen/v2/voice/start.mp3`);
+  assert.equal(file.status, 200);
+  assert.match(file.headers.get("content-type"), /^audio\/mpeg/);
+  const size = statSync(fileURLToPath(new URL("../public/screen/v2/voice/start.mp3", import.meta.url))).size;
+  assert.equal((await file.arrayBuffer()).byteLength, size);
 });

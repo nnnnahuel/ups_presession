@@ -12,7 +12,10 @@ import {
   hourStartOf,
   hourStartOfIso,
   musicShouldBeLow,
+  outputTimeFor,
   sameDayAt,
+  voiceFileUrl,
+  voiceStatus,
   wallTime,
 } from "/screen/v2/timeline.js";
 
@@ -37,8 +40,6 @@ const TEXT = {
 
 // ===== Ajustes =====
 const SETTINGS = {
-  RADIO_FILTER: true, // false = voz limpia, sin filtro de radio
-  VOICE_GAIN: 1.15,
   // Las mismas llamadas que usa hoy /screen (public/screen/script.js).
   MUSIC_DOWN_PATH: "/screen/volume/ramp/50?duration=1200&from=88",
   MUSIC_UP_PATH: "/screen/volume/ramp/88?duration=1200",
@@ -411,12 +412,20 @@ const SPEAKER_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/></svg>';
 const MUTED_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>';
-const LINE_COUNT = Object.keys(VOICE_LINES).length;
+const VOICE_KEYS = Object.keys(VOICE_LINES);
 
 let audioCtx = null;
-let voiceInput = null;
 const voiceBuffers = new Map();
 let voicePreloadDone = false;
+
+function voice() {
+  return voiceStatus(VOICE_KEYS, voiceBuffers);
+}
+
+// A phrase plays only when every recorded file is decoded (see voiceStatus).
+function canSpeak(line) {
+  return voice().ready && voiceBuffers.has(line);
+}
 
 function initAudio() {
   if (MUTE) return;
@@ -428,7 +437,6 @@ function initAudio() {
     audioCtx = null;
     return;
   }
-  voiceInput = buildVoiceChain(audioCtx);
   audioCtx.addEventListener("statechange", onAudioStateChange);
   for (const type of ["pointerdown", "keydown", "touchend"]) window.addEventListener(type, unlockAudio, { passive: true });
   if (audioCtx.state !== "running") audioCtx.resume().catch(() => {});
@@ -447,53 +455,14 @@ function onAudioStateChange() {
   sendHeartbeat();
 }
 
-// Subtle radio/announcer colour: band-limited, a little presence, soft drive, compressed.
-function buildVoiceChain(ctx) {
-  const output = ctx.createGain();
-  output.gain.value = SETTINGS.VOICE_GAIN;
-  output.connect(ctx.destination);
-  if (!SETTINGS.RADIO_FILTER) return output;
-
-  const filter = (type, frequency, q, gain = 0) => {
-    const node = ctx.createBiquadFilter();
-    node.type = type;
-    node.frequency.value = frequency;
-    node.Q.value = q;
-    node.gain.value = gain;
-    return node;
-  };
-  const highpass = filter("highpass", 170, 0.7);
-  const presence = filter("peaking", 2600, 0.9, 3);
-  const lowpass = filter("lowpass", 6800, 0.7);
-  const drive = ctx.createWaveShaper();
-  const curve = new Float32Array(1024);
-  for (let i = 0; i < curve.length; i += 1) {
-    const x = (i / (curve.length - 1)) * 2 - 1;
-    curve[i] = Math.tanh(1.6 * x) / Math.tanh(1.6);
-  }
-  drive.curve = curve;
-  drive.oversample = "2x";
-  const compressor = ctx.createDynamicsCompressor();
-  compressor.threshold.value = -20;
-  compressor.knee.value = 10;
-  compressor.ratio.value = 3.5;
-  compressor.attack.value = 0.004;
-  compressor.release.value = 0.2;
-
-  highpass.connect(presence).connect(lowpass).connect(drive).connect(compressor).connect(output);
-  return highpass;
-}
-
+// The recorded files are static (the announcer effect is already in them) and all of them are
+// decoded up front, so every cue can be scheduled to the sample.
 async function preloadVoice() {
   if (!audioCtx) return;
-  for (const [key, text] of Object.entries(VOICE_LINES)) {
+  for (const key of VOICE_KEYS) {
     if (voiceBuffers.has(key)) continue;
     try {
-      const response = await fetch("/screen/tts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+      const response = await fetch(voiceFileUrl(key));
       if (!response.ok) continue;
       voiceBuffers.set(key, await audioCtx.decodeAudioData(await response.arrayBuffer()));
     } catch {
@@ -503,7 +472,7 @@ async function preloadVoice() {
   voicePreloadDone = true;
   updateSoundUi();
   sendHeartbeat();
-  if (voiceBuffers.size < LINE_COUNT) setTimeout(preloadVoice, SETTINGS.VOICE_RETRY_MS);
+  if (!voice().ready) setTimeout(preloadVoice, SETTINGS.VOICE_RETRY_MS);
 }
 
 function updateSoundUi() {
@@ -513,7 +482,7 @@ function updateSoundUi() {
 
   let html = "";
   if (MUTE || !audioCtx) html = `${MUTED_ICON}<span>${TEXT.soundMuted}</span>`;
-  else if (!locked && voicePreloadDone && voiceBuffers.size < LINE_COUNT) html = `${MUTED_ICON}<span>${TEXT.soundUnavailable}</span>`;
+  else if (!locked && voicePreloadDone && !voice().ready) html = `${MUTED_ICON}<span>${TEXT.soundUnavailable}</span>`;
   else if (!locked) html = SPEAKER_ICON;
   if (el.sound.innerHTML !== html) el.sound.innerHTML = html;
 }
@@ -524,20 +493,19 @@ const playedCues = new Set();
 let lastCue = null;
 let lastCueAt = null;
 
+// null while the output clock has not started yet (see outputTimeFor).
 function contextTimeFor(epoch) {
-  const stamp = typeof audioCtx.getOutputTimestamp === "function" ? audioCtx.getOutputTimestamp() : null;
-  if (stamp && stamp.performanceTime > 0) {
-    // contextTime is the sample leaving the speakers at performanceTime: output latency included.
-    return stamp.contextTime + (epoch - epochAtPerf(stamp.performanceTime)) / SEC / RATE;
+  if (typeof audioCtx.getOutputTimestamp === "function") {
+    return outputTimeFor(epoch, audioCtx.getOutputTimestamp(), epochAtPerf, RATE);
   }
   const latency = audioCtx.outputLatency || audioCtx.baseLatency || 0;
   return audioCtx.currentTime + (epoch - nowMs()) / SEC / RATE - latency;
 }
 
 function scheduleVoice(now) {
-  if (!audioRunning()) return;
+  if (!audioRunning() || contextTimeFor(now) === null) return;
   const due = dueCues(now, schedule, {
-    hasLine: (line) => voiceBuffers.has(line),
+    hasLine: canSpeak,
     lookaheadMs: SETTINGS.VOICE_LOOKAHEAD_MS,
     lateMs: SETTINGS.VOICE_LATE_MS,
     rate: RATE,
@@ -546,7 +514,7 @@ function scheduleVoice(now) {
     if (scheduledCues.has(key) || playedCues.has(key)) continue;
     const source = audioCtx.createBufferSource();
     source.buffer = voiceBuffers.get(cue.line);
-    source.connect(voiceInput);
+    source.connect(audioCtx.destination);
     const startAt = Math.max(audioCtx.currentTime, contextTimeFor(at));
     source.start(startAt);
     source.onended = () => source.disconnect();
@@ -590,7 +558,7 @@ let musicLowSent = false;
 function controlMusic(now) {
   if (TEST_MODE) return;
   const low = musicShouldBeLow(now, schedule, {
-    lineDurationMs: (line) => (audioRunning() && voiceBuffers.has(line) ? voiceBuffers.get(line).duration * SEC : null),
+    lineDurationMs: (line) => (audioRunning() && canSpeak(line) ? voiceBuffers.get(line).duration * SEC : null),
     leadMs: SETTINGS.MUSIC_DUCK_LEAD_MS,
     tailMs: SETTINGS.MUSIC_DUCK_TAIL_MS,
     restoreMinute: SETTINGS.MUSIC_RESTORE_MINUTE,
@@ -658,7 +626,8 @@ function sendHeartbeat() {
     body: JSON.stringify({
       studio: STUDIO,
       audioUnlocked: audioRunning(),
-      voiceReady: voiceBuffers.size === LINE_COUNT,
+      voiceReady: voice().ready,
+      voiceMissing: voicePreloadDone ? voice().missing : [],
       lastCue,
       lastCueAt,
     }),
@@ -675,7 +644,8 @@ window.upsScreen = {
     screenKey: SCREEN_KEY ? "set" : "missing",
     clockOffsetMs: clockOffset,
     audio: audioCtx ? audioCtx.state : "off",
-    voiceLines: `${voiceBuffers.size}/${LINE_COUNT}`,
+    voiceLines: `${voiceBuffers.size}/${VOICE_KEYS.length}`,
+    voiceMissing: voicePreloadDone ? voice().missing : [],
     scheduledCues: [...scheduledCues.keys()],
     lastCue,
     lastCueAt,
