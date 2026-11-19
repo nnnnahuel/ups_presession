@@ -225,6 +225,10 @@ Endpoints:
   de la hora: el aviso electrónico (que dura 0,4 s) cae justo antes de las :00
   y la voz entra 0,8 s después del inicio del archivo. `minute45` y `end` salen
   a las :45:00 y :55:00 exactas.
+- Cuando un atleta escanea (o llega tarde a la fila de la clase) suena un tono
+  corto y suave, sintetizado en la página (`public/screen/v2/chime.js`, sin
+  archivos); en un hito, dos notas. No baja la música, no suena encima de la
+  voz y no suena al cargar la página ni con `mute=1`.
 - Los textos de pantalla y los tiempos están arriba de `public/screen/v2/app.js`.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

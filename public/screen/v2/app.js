@@ -1,8 +1,10 @@
+import { playChime } from "/screen/v2/chime.js";
 import { VOICE_LINES } from "/screen/v2/voice-lines.js";
 import {
   DEMO_DEFAULT_COUNT,
   DEMO_ROSTER,
   SEC,
+  chimeClear,
   computeView,
   createClassMemory,
   demoLobby,
@@ -12,7 +14,9 @@ import {
   hourStartOf,
   hourStartOfIso,
   musicShouldBeLow,
+  newScans,
   outputTimeFor,
+  planChimes,
   sameDayAt,
   voiceFileUrl,
   voiceStatus,
@@ -51,6 +55,9 @@ const SETTINGS = {
   FINAL_COUNT_SECONDS: 10,
   LOBBY_FAST_MS: 5000, // de :50 a :10
   LOBBY_SLOW_MS: 60000,
+  CHIME_GAP_MS: 300, // varios escaneos juntos: uno por atleta, separados
+  CHIME_MAX: 3,
+  CHIME_CLEAR_MS: 1000, // no suena si una frase de la voz empieza dentro de este tiempo
   LOBBY_CLASS_MS: 15000, // con una clase en curso (de :10 a :50), para que el que llega tarde aparezca rápido
   PORTAL_FRESH_MS: 3 * 60 * 1000,
   PORTAL_GRACE_MS: 20 * 1000, // tras un error del portal, cuánto se siguen usando los últimos datos
@@ -291,6 +298,7 @@ const ROSTER_MORPH_MS = 900;
 const LEAVE_FADE_MS = 450;
 const slots = new Map();
 let namesKey = "";
+let lastNames = null;
 let namesShown = false;
 let namesClearTimer = 0;
 
@@ -372,6 +380,8 @@ function renderNames(names) {
   const key = names ? JSON.stringify([names.classStart, names.coach, names.compact, names.athletes]) : "";
   if (key === namesKey) return;
   namesKey = key;
+  playScanChimes(newScans(lastNames, names));
+  lastNames = names;
 
   if (!names) {
     if (namesShown) {
@@ -721,10 +731,40 @@ function rescheduleVoice() {
 // ===== Studio music volume (real clock only) =====
 let musicLowSent = false;
 
+// How long a phrase lasts, or null when it will not play.
+function voiceLineMs(line) {
+  return audioRunning() && canSpeak(line) ? voiceBuffers.get(line).duration * SEC : null;
+}
+
+// A short chime for each card that lights up (see chime.js): no volume commands, never over the
+// voice, and nothing without running audio (mute=1 has no audio at all).
+function playScanChimes(scans) {
+  if (!scans.length) return;
+  const now = nowMs();
+  const plan = planChimes(scans, now, {
+    enabled: audioRunning(),
+    gapMs: SETTINGS.CHIME_GAP_MS * RATE,
+    max: SETTINGS.CHIME_MAX,
+    isClear: (at) =>
+      chimeClear(at, schedule, {
+        lineDurationMs: (line) => {
+          const ms = voiceLineMs(line);
+          return ms === null ? null : ms * RATE;
+        },
+        clearMs: SETTINGS.CHIME_CLEAR_MS * RATE,
+      }),
+  });
+  if (!plan.length) return;
+  const base = audioCtx.currentTime + 0.02;
+  for (const chime of plan) {
+    playChime(audioCtx, audioCtx.destination, base + (chime.at - now) / SEC / RATE, { milestone: chime.milestone });
+  }
+}
+
 function controlMusic(now) {
   if (TEST_MODE) return;
   const low = musicShouldBeLow(now, schedule, {
-    lineDurationMs: (line) => (audioRunning() && canSpeak(line) ? voiceBuffers.get(line).duration * SEC : null),
+    lineDurationMs: voiceLineMs,
     leadMs: SETTINGS.MUSIC_DUCK_LEAD_MS,
     tailMs: SETTINGS.MUSIC_DUCK_TAIL_MS,
     restoreMinute: SETTINGS.MUSIC_RESTORE_MINUTE,

@@ -244,6 +244,42 @@ export function dueCues(now, schedule, { hasLine, lookaheadMs, lateMs, rate = 1 
   return due;
 }
 
+// ===== Scan chime =====
+// The athletes whose card lights up from one update of the names to the next: a scan on the
+// wall, or a late arrival joining the class row. Nothing when the names have just appeared
+// (page load, :57), across the minute-5 change, or when the class changes.
+export function newScans(before, after) {
+  if (!before || !after || before.compact !== after.compact || before.classStart !== after.classStart) return [];
+  const litBefore = new Set(before.athletes.filter((a) => a.lit).map((a) => a.id));
+  return after.athletes.filter((a) => a.lit && !litBefore.has(a.id)).map((a) => ({ id: a.id, milestone: a.milestone }));
+}
+
+// Whether a chime may sound at `at`: never over the voice. False while a phrase plays or when
+// one starts within the next clearMs. lineDurationMs(line) is null for a line that will not play.
+export function chimeClear(at, schedule, { lineDurationMs, clearMs }) {
+  const hour = hourStartOf(at);
+  for (const classStart of [hour - HOUR, hour, hour + HOUR]) {
+    if (!schedule.hasClassAt(classStart)) continue;
+    for (const cue of CUES) {
+      const duration = lineDurationMs(cue.line);
+      if (duration === null) continue;
+      const start = classStart + cue.offset;
+      if (at >= start - clearMs && at < start + duration) return false;
+    }
+  }
+  return true;
+}
+
+// One chime per athlete, gapMs apart, at most `max`. A chime the voice is in the way of is
+// dropped, not moved.
+export function planChimes(scans, now, { enabled, gapMs, max, isClear }) {
+  if (!enabled) return [];
+  return scans
+    .slice(0, max)
+    .map((scan, index) => ({ ...scan, at: now + index * gapMs }))
+    .filter((chime) => isClear(chime.at));
+}
+
 // ===== Studio music =====
 // Low from «Sesión completa» until `restoreMinute` of the next class, and around every phrase.
 // lineDurationMs(line) returns the phrase length, or null when it will not play.

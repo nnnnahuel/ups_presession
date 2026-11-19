@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { CHIME } from "../public/screen/v2/chime.js";
 import { VOICE_LINES } from "../public/screen/v2/voice-lines.js";
 import {
   CUES,
+  chimeClear,
   computeView,
   createClassMemory,
   demoLobby,
@@ -12,7 +14,9 @@ import {
   hourStartOf,
   lobbyPollDelayMs,
   musicShouldBeLow,
+  newScans,
   outputTimeFor,
+  planChimes,
   sameDayAt,
   voiceFileUrl,
   voiceStatus,
@@ -439,4 +443,62 @@ test("Argentina wall clock helpers", () => {
   assert.equal(hourStartOf(Date.parse("2026-11-19T02:30:00Z")), at("23:00"));
   assert.equal(sameDayAt(at("10:00"), (20 * 60 + 57) * 60 * 1000), at("20:57"));
   assert.equal(sameDayAt(Date.parse("2026-11-19T02:30:00Z"), 60 * 1000), at("00:01"));
+});
+
+// ===== Scan chime =====
+test("a chime for each card that lights up: a scan, a milestone, a late arrival into the row", () => {
+  const schedule = withCurrent();
+  const names = (time) => view(time, schedule).names;
+  assert.deepEqual(newScans(names("20:57:54"), names("20:57:56")), [{ id: "demo-luna", milestone: false }]);
+  assert.deepEqual(newScans(names("20:57:09"), names("20:57:11")), [{ id: "demo-marta", milestone: true }]);
+  assert.deepEqual(newScans(names("21:09:59"), names("21:10:01")), [{ id: "demo-tomas", milestone: false }]);
+  assert.deepEqual(newScans(names("21:20"), names("21:20:05")), [], "nothing new, nothing plays");
+});
+
+test("no chime when the names just appear, at the minute-5 change or when the class changes", () => {
+  const schedule = withCurrent();
+  const names = (time) => view(time, schedule).names;
+  assert.deepEqual(newScans(null, names("20:58")), [], "page loaded with athletes already scanned");
+  assert.deepEqual(newScans(names("21:04:59"), names("21:05")), [], "minute 5: big cards to the row");
+  assert.deepEqual(newScans(names("21:54:59"), names("21:57")), [], "the next class's lobby");
+});
+
+test("the chime never plays over the voice, and needs running audio", () => {
+  const clear = (time, lineDurationMs = () => 1000) =>
+    chimeClear(at(time), everyHour, { lineDurationMs, clearMs: 1000 });
+  assert.equal(clear("20:59:53"), true);
+  assert.equal(clear("20:59:54.200"), false, "«Cinco» starts in under a second");
+  assert.equal(clear("20:59:56.500"), false, "a number is playing");
+  const startLasts = (line) => (line === "start" ? 3082 : 950);
+  assert.equal(clear("21:00:02", startLasts), false, "«Comienza la sesión» is still playing");
+  assert.equal(clear("21:00:03", startLasts), true);
+  assert.equal(clear("20:44:30"), true);
+  assert.equal(clear("20:44:59.500"), false);
+  assert.equal(clear("20:59:56.500", () => null), true, "a voice that will not play is not in the way");
+
+  const scans = [{ id: "a", milestone: false }];
+  assert.deepEqual(planChimes(scans, 0, { enabled: false, gapMs: 300, max: 3, isClear: () => true }), [], "mute or audio off");
+  assert.deepEqual(planChimes(scans, 0, { enabled: true, gapMs: 300, max: 3, isClear: () => false }), [], "dropped, not queued");
+});
+
+test("several scans at once: one chime each, 300 ms apart, at most three", () => {
+  const scans = ["a", "b", "c", "d", "e"].map((id) => ({ id, milestone: id === "b" }));
+  const plan = planChimes(scans, 1000, { enabled: true, gapMs: 300, max: 3, isClear: () => true });
+  assert.deepEqual(plan.map((c) => [c.id, c.milestone, c.at]), [
+    ["a", false, 1000],
+    ["b", true, 1300],
+    ["c", false, 1600],
+  ]);
+  const blocked = planChimes(scans, 1000, { enabled: true, gapMs: 300, max: 3, isClear: (t) => t !== 1300 });
+  assert.deepEqual(blocked.map((c) => [c.id, c.at]), [
+    ["a", 1000],
+    ["c", 1600],
+  ]);
+});
+
+test("the chime is short and well under the voice", () => {
+  assert.ok(CHIME.length >= 0.3 && CHIME.length <= 0.45, "300-450 ms");
+  assert.ok(CHIME.accentDelay + CHIME.length <= 0.6, "the milestone version stays short");
+  assert.ok(CHIME.level <= 0.25, "peak around -12.5 dBFS, about 12 LU under the voice");
+  assert.ok(CHIME.accent > CHIME.note, "the milestone's second note is higher");
 });
