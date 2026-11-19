@@ -4,8 +4,9 @@
 //
 // One note, E5, a sine with a faint second harmonic for body. It starts with a soft 8 ms swell
 // (no click), settles from a hair sharp in the first 60 ms and fades out over 0.42 s. A milestone
-// adds a second note a fifth higher (B5) 0.11 s later. Peak about -12.5 dBFS, about 12 LU under the
-// voice (measured on the preview WAVs against the recorded phrases): soft, but heard over the music.
+// adds a second note a fifth higher (B5) 0.11 s later. Peak about -12.5 dBFS, about 17 LU under the
+// announcements (chime -27.9 LUFS momentary max against -10/-11 for the phrases, since the voice was
+// made louder; -12 to -14 for the numbers): soft, but heard over the music.
 export const CHIME = {
   note: 659.25, // E5
   accent: 987.77, // B5, the milestone's second note

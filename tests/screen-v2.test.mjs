@@ -499,6 +499,6 @@ test("several scans at once: one chime each, 300 ms apart, at most three", () =>
 test("the chime is short and well under the voice", () => {
   assert.ok(CHIME.length >= 0.3 && CHIME.length <= 0.45, "300-450 ms");
   assert.ok(CHIME.accentDelay + CHIME.length <= 0.6, "the milestone version stays short");
-  assert.ok(CHIME.level <= 0.25, "peak around -12.5 dBFS, about 12 LU under the voice");
+  assert.ok(CHIME.level <= 0.25, "peak around -12.5 dBFS, about 17 LU under the announcements");
   assert.ok(CHIME.accent > CHIME.note, "the milestone's second note is higher");
 });

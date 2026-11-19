@@ -216,8 +216,10 @@ Endpoints:
 
 - Son ocho audios grabados en `public/screen/v2/voice/<clave>.mp3` (`count5` a
   `count1`, `start`, `minute45`, `end`), con el efecto de anunciador ya
-  aplicado. La pantalla los baja como archivos estáticos y los decodifica todos
-  al arrancar; no les agrega filtro ni volumen.
+  aplicado y subidos unos 4 LU con un limitador (pico real máximo −1 dBTP; el
+  comando está en las notas de la pantalla). La pantalla los baja como archivos
+  estáticos y los decodifica todos al arrancar; no les agrega filtro ni volumen.
+  Un archivo nuevo tiene que pasar por el mismo tratamiento para quedar parejo.
 - `public/screen/v2/voice-lines.js` registra qué dice cada audio. Cambiar un
   texto ahí no cambia lo que suena: hay que grabar y reemplazar el archivo, con
   el mismo nombre.
