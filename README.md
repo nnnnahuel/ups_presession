@@ -101,11 +101,15 @@ pantalla hable sin que nadie la toque, abrí Chrome con este acceso directo
 (un perfil propio hace que la opción se aplique aunque haya otro Chrome abierto):
 
 ```bat
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk --autoplay-policy=no-user-gesture-required --user-data-dir="%LOCALAPPDATA%\UPS-Pantalla" "https://sesiones.up-s.ar/screen/v2?studio=A"
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk --autoplay-policy=no-user-gesture-required --user-data-dir="%LOCALAPPDATA%\UPS-Pantalla" "https://sesiones.up-s.ar/screen/v2?studio=A&key=CLAVE_DE_PANTALLA"
 ```
 
+- `CLAVE_DE_PANTALLA` es el valor de `SCREEN_DISPLAY_KEY` en el servidor. La
+  pantalla la guarda en el navegador, así que una recarga sin `key` sigue
+  funcionando; `?key=` vacío la borra. Sin clave (o con una incorrecta) la
+  pantalla anda por reloj, sin nombres y sin latido.
 - `--kiosk` la abre a pantalla completa; para salir, `Alt+F4`.
-- Para el Estudio B, terminá la dirección en `?studio=B`.
+- Para el Estudio B, usá `studio=B` en la dirección.
 - Si igual aparece «Activar sonido», un toque, un clic o cualquier tecla lo
   resuelve. Con el sonido activo queda un parlante chico abajo a la derecha.
 - Para ver desde afuera si la pantalla está abierta y con sonido:
@@ -126,11 +130,26 @@ pantalla hable sin que nadie la toque, abrí Chrome con este acceso directo
 
 ### Servidor
 
-- `GET /screen/api/lobby?studio=A|B` pide al portal
+Variables de entorno:
+
+- `UPS_PORTAL_API_BASE_URL`: dirección del portal (`ups_payments`).
+- `STUDIO_SCREEN_API_TOKEN`: token con el que el servidor le pide el lobby al portal.
+- `SCREEN_DISPLAY_KEY`: clave de la pantalla. La pantalla la manda en el header
+  `X-Screen-Key` al pedir el lobby y en el latido. Sin esta variable, el lobby y
+  el latido quedan cerrados.
+
+Endpoints:
+
+- `GET /screen/api/lobby?studio=A|B` (con `X-Screen-Key`) pide al portal
   `${UPS_PORTAL_API_BASE_URL}/api/studio-screen/lobby/?studio=A` con
   `Authorization: Bearer ${STUDIO_SCREEN_API_TOKEN}` y guarda la respuesta
-  4 segundos. Sin esas variables o si el portal falla devuelve `{"ok": false}` y
-  la pantalla sigue por reloj como si hubiera clase todas las horas.
+  4 segundos. Sin clave correcta responde `{"ok": false}` sin preguntarle nada
+  al portal; sin las variables del portal o si el portal falla, también
+  `{"ok": false}`. En esos casos la pantalla sigue por reloj como si hubiera
+  clase todas las horas, sin nombres.
+- `POST /screen/api/display/heartbeat` (con `X-Screen-Key`) guarda el estado de
+  la pantalla; sin clave correcta no guarda nada. `GET /screen/api/health` es
+  público y lo muestra en `screenDisplays`.
 - `POST /screen/tts` solo acepta las frases fijas: las de
   `public/screen/script.js` y las de `public/screen/v2/voice-lines.js`. Otro
   texto → 400. El audio queda guardado en la tabla `screen_tts_audio`, así que

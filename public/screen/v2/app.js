@@ -69,6 +69,24 @@ const DEMO = parseDemoParam(params.get("demo"));
 const MUTE = isTrue(params.get("mute"));
 const TEST_MODE = SIMULATED || DEMO !== null; // never touches the studio volume, never sends heartbeats
 const RATE = SIMULATED ? SPEED : 1;
+// Screen key (?key=...): kept in localStorage so a reload without the parameter still works,
+// and sent only as a header. An empty ?key= forgets it.
+const SCREEN_KEY = readScreenKey();
+const KEY_HEADERS = SCREEN_KEY ? { "x-screen-key": SCREEN_KEY } : {};
+
+function readScreenKey() {
+  const storageKey = "ups-screen-v2:key";
+  const fromUrl = params.get("key");
+  try {
+    if (fromUrl === null) return (localStorage.getItem(storageKey) || "").trim();
+    const key = fromUrl.trim();
+    if (key) localStorage.setItem(storageKey, key);
+    else localStorage.removeItem(storageKey);
+    return key;
+  } catch {
+    return (fromUrl || "").trim();
+  }
+}
 
 function isTrue(value) {
   return value === "1" || value === "true" || value === "";
@@ -179,7 +197,6 @@ const el = {
   fill: $("fill"),
   legend: [...$("legend").children],
   lobbyTitle: $("lobbyTitle"),
-  lobbyCount: $("lobbyCount"),
   names: $("names"),
   gate: $("gate"),
   sound: $("sound"),
@@ -292,7 +309,6 @@ function renderNames(names) {
   namesShown = true;
   body.classList.add("has-lobby");
   setText(el.lobbyTitle, TEXT.namesTitle(hhmm(names.classStart), names.coach));
-  setText(el.lobbyCount, `${names.lit}/${names.total}`);
 
   const firstLeft = new Map();
   if (!appearing) for (const [id, li] of slots) firstLeft.set(id, li.getBoundingClientRect().left);
@@ -576,7 +592,7 @@ function absorbServerTime(serverTime, sentAt, receivedAt) {
 async function pollLobby() {
   const sentAt = performance.now();
   try {
-    const response = await fetch(`/screen/api/lobby?studio=${STUDIO}`, { cache: "no-store" });
+    const response = await fetch(`/screen/api/lobby?studio=${STUDIO}`, { cache: "no-store", headers: KEY_HEADERS });
     const data = await response.json();
     const receivedAt = performance.now();
     absorbServerTime(data.serverTime, sentAt, receivedAt);
@@ -605,10 +621,10 @@ function nextLobbyDelay() {
 }
 
 function sendHeartbeat() {
-  if (TEST_MODE) return;
+  if (TEST_MODE || !SCREEN_KEY) return;
   fetch("/screen/api/display/heartbeat", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...KEY_HEADERS },
     body: JSON.stringify({
       studio: STUDIO,
       audioUnlocked: audioRunning(),
@@ -626,6 +642,7 @@ window.upsScreen = {
     studio: STUDIO,
     now: new Date(nowMs()).toISOString(),
     testMode: TEST_MODE,
+    screenKey: SCREEN_KEY ? "set" : "missing",
     clockOffsetMs: clockOffset,
     audio: audioCtx ? audioCtx.state : "off",
     voiceLines: `${voiceBuffers.size}/${LINE_COUNT}`,

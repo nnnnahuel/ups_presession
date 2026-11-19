@@ -214,14 +214,6 @@ body.has-lobby .lobby {
   transition: color var(--theme) ease;
 }
 
-.lobby-count {
-  font-family: "UP.S Numeral", ui-monospace, monospace;
-  font-weight: 700;
-  font-size: 1.7cqw;
-  letter-spacing: 0.06em;
-  color: var(--fg);
-}
-
 .names {
   display: grid;
   grid-auto-flow: column;

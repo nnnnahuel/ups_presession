@@ -1,4 +1,5 @@
 import express from "express";
+import { createHash, timingSafeEqual } from "node:crypto";
 import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,6 +77,12 @@ const SCREEN_LOBBY_ERROR_LOG_MS = 5 * 60 * 1000;
 const screenLobbyCache = new Map();
 const screenLobbyInflight = new Map();
 const screenLobbyLastErrorLogAt = new Map();
+
+// The lobby lists first names and arrival times, so /screen/v2 must present this
+// key (header X-Screen-Key) for the lobby and the heartbeat. Unset = closed.
+const SCREEN_DISPLAY_KEY_DIGEST = String(process.env.SCREEN_DISPLAY_KEY || "").trim()
+  ? createHash("sha256").update(String(process.env.SCREEN_DISPLAY_KEY).trim()).digest()
+  : null;
 
 // Heartbeats from /screen/v2, kept in memory per studio.
 const SCREEN_DISPLAY_ONLINE_SECONDS = 90;
@@ -2285,8 +2292,22 @@ async function getScreenLobby(studio) {
   return pending;
 }
 
+// Constant-time check of X-Screen-Key; comparing digests keeps the length out of the timing too.
+function hasScreenDisplayKey(req) {
+  if (!SCREEN_DISPLAY_KEY_DIGEST) return false;
+  const provided = req.get("x-screen-key");
+  if (typeof provided !== "string" || !provided.trim()) return false;
+  return timingSafeEqual(createHash("sha256").update(provided.trim()).digest(), SCREEN_DISPLAY_KEY_DIGEST);
+}
+
 app.get("/screen/api/lobby", async (req, res) => {
   res.set("Cache-Control", "no-store");
+  // Without the key the screen gets the same answer as a portal outage and runs by the clock alone.
+  if (!hasScreenDisplayKey(req)) {
+    res.json({ ok: false, serverTime: new Date().toISOString() });
+    return;
+  }
+
   const studio = parseScreenStudio(req.query.studio);
   if (!studio) {
     res.status(400).json({ ok: false, error: "invalid_studio" });
@@ -2309,6 +2330,11 @@ function screenDisplaySnapshot() {
 
 app.post("/screen/api/display/heartbeat", (req, res) => {
   res.set("Cache-Control", "no-store");
+  if (!hasScreenDisplayKey(req)) {
+    res.json({ ok: false });
+    return;
+  }
+
   const studio = parseScreenStudio(req.body?.studio);
   if (!studio) {
     res.status(400).json({ ok: false, error: "invalid_studio" });
