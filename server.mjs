@@ -2590,34 +2590,9 @@ app.get(/.*/, (_req, res) => {
   res.sendFile(path.join(distDir, "index.html"));
 });
 
-function startVolumeControlJobs() {
-  cron.schedule(
-    "45 * * * *",
-    () => {
-      runDetached("cron volume_ramp 50", createCommandRecord({ all: true }, "volume_ramp", 50));
-      setTimeout(() => {
-        runDetached("cron volume_ramp 90", createCommandRecord({ all: true }, "volume_ramp", 90));
-      }, 5000);
-    },
-    { timezone: TZ }
-  );
-
-  cron.schedule(
-    "55 * * * *",
-    () => {
-      runDetached("cron volume_ramp 50", createCommandRecord({ all: true }, "volume_ramp", 50));
-    },
-    { timezone: TZ }
-  );
-
-  cron.schedule(
-    "8 * * * *",
-    () => {
-      runDetached("cron volume_ramp 90", createCommandRecord({ all: true }, "volume_ramp", 90));
-    },
-    { timezone: TZ }
-  );
-
+// Marks screen workers that stopped reporting as offline. The server sends no volume commands on
+// its own schedule: the screens ramp the music around their voice lines.
+function startOfflineWorkerSweep() {
   setInterval(() => {
     runDetached("markOfflineWorkers", markOfflineWorkers());
   }, WORKER_OFFLINE_INTERVAL_MS);
@@ -2670,7 +2645,7 @@ initDb()
       });
     }, 5000);
     fairQueueTimer.unref();
-    startVolumeControlJobs();
+    startOfflineWorkerSweep();
     startSpotifyPlaylistGuardJobs();
     app.listen(port, () => {
       console.log(`Server listening on port ${port}`);
