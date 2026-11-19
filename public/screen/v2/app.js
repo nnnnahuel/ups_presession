@@ -44,9 +44,10 @@ const TEXT = {
 
 // ===== Ajustes =====
 const SETTINGS = {
-  // Las rutas de volumen de /screen, con la música normal al 100 (la pantalla vieja tiene su propio nivel).
-  MUSIC_DOWN_PATH: "/screen/volume/ramp/50?duration=1200&from=100",
-  MUSIC_UP_PATH: "/screen/volume/ramp/100?duration=1200",
+  // Las rutas de volumen de /screen. Música normal en 70 y en 30 mientras habla la voz: el parlante va
+  // más alto y la voz, que sale al 100, queda por encima. La pantalla vieja tiene su propio nivel.
+  MUSIC_DOWN_PATH: "/screen/volume/ramp/30?duration=1200&from=70",
+  MUSIC_UP_PATH: "/screen/volume/ramp/70?duration=1200",
   MUSIC_RESTORE_MINUTE: 2, // tras «Sesión completa» la música vuelve a subir en este minuto de la clase nueva
   MUSIC_DUCK_LEAD_MS: 3500, // el worker pregunta cada 2 s y la rampa dura 1,2 s
   MUSIC_DUCK_TAIL_MS: 800,
