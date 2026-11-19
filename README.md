@@ -89,6 +89,52 @@ The Windows worker that applies system-volume commands connects to
 targeting another deployment. The worker also requires `DEVICE_ID`,
 `LOCATION_ID`, and the matching `WORKER_TOKEN`.
 
+### Bajar solo la música (no la voz)
+
+El trabajador baja y sube el volumen cuando la pantalla habla. Por defecto mueve
+el volumen general de Windows, y entonces la voz de la pantalla (que sale del
+navegador de la misma notebook) también baja. Con dos variables opcionales mueve
+solo el volumen de Spotify:
+
+- `MUSIC_PROCESS`: el programa de la música, por ejemplo `Spotify.exe`. Con
+  esta variable las órdenes de volumen (`volume`, `volume_ramp`, `mute`,
+  `unmute`) cambian solo ese programa en el mezclador de volumen de Windows. Sin
+  ella todo sigue como antes.
+- `SYSTEM_VOLUME_PCT`: solo sirve junto con `MUSIC_PROCESS`. Al arrancar, el
+  trabajador pone una vez el volumen general de Windows en ese valor (por
+  ejemplo `100`) y le saca el silencio; después no lo vuelve a tocar. Sirve para
+  que no quede bajo por el modo anterior.
+
+Hace falta NirCmd 2.50 o más nuevo: ahí aparecieron los comandos por programa
+(`setappvolume` y `muteappvolume`). La versión actual es la 2.87, en
+[nirsoft.net](https://www.nirsoft.net/utils/nircmd.html). Con un NirCmd más viejo
+esos comandos no existen y la música no bajaría.
+
+Pasos en la notebook del estudio (no hace falta saber programar):
+
+1. Cerrar la ventana negra del trabajador («UP.S Screen Worker»).
+2. En la carpeta del trabajador, reemplazar `worker.cjs` por el de este
+   repositorio.
+3. Abrir con el Bloc de notas el archivo con el que se arranca el trabajador
+   (el `.bat`) y agregar estas líneas antes de la que dice `node worker.cjs`:
+
+   ```bat
+   set MUSIC_PROCESS=Spotify.exe
+   set SYSTEM_VOLUME_PCT=100
+   ```
+
+   La segunda es opcional. Las demás líneas del archivo quedan como están (el
+   token sigue donde estaba; no se copia a ningún otro lado).
+4. Guardar y volver a arrancar el trabajador. En la ventana tiene que aparecer
+   `Volumen: solo la música (Spotify.exe) en el mezclador de Windows`. Si dice
+   `Volumen: maestro de Windows`, la variable no quedó puesta.
+5. Una sola vez, con Spotify sonando y la pantalla abierta: clic derecho en el
+   parlante de la barra de tareas → «Mezclador de volumen», y revisar que el
+   navegador de la pantalla esté al 100 y que el volumen general esté alto. El
+   volumen de Spotify lo maneja el trabajador.
+
+Para volver al modo de antes, borrar esas dos líneas y reiniciar el trabajador.
+
 ## Pantalla del estudio v2 (`/screen/v2`)
 
 Pantalla nueva con cuenta regresiva, voz y lobby de nombres. Vive aparte de
@@ -130,7 +176,9 @@ pantalla hable sin que nadie la toque, abrí Chrome con este acceso directo
 - `mute=1` calla la voz.
 - Con `now`, `speed` o `demo` la pantalla nunca toca el volumen ni manda el
   latido. **Sin esos parámetros actúa sobre el estudio de verdad** (baja la
-  música por los mismos endpoints que `/screen`).
+  música por los mismos endpoints que `/screen`). Con el trabajador en modo
+  `MUSIC_PROCESS` baja solo Spotify; si no, baja el volumen general y la voz
+  también.
 
 ### Servidor
 
