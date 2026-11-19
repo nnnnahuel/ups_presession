@@ -99,6 +99,12 @@ export function createClassMemory(initial = []) {
 }
 
 // ===== What the screen shows =====
+// On the wall the number counts sessions done: before scanning, the ones already done (never 0;
+// a first session stays 1); the scan adds today's.
+function unlitNumber(finalNumber, first) {
+  return finalNumber === null || first ? finalNumber : Math.max(1, finalNumber - 1);
+}
+
 // The athletes of one class slot (the portal's `lobby` or `current`). With presentOnly, only the
 // ones who scanned: the quiet row shown from minute 5 to the end of the class (`compact`).
 function rosterFrom(slot, classStart, { presentOnly = false } = {}) {
@@ -115,6 +121,7 @@ function rosterFrom(slot, classStart, { presentOnly = false } = {}) {
     // session_number is today's session. A first session is session 1; without session_number
     // (older bridge) the card shows only the name.
     const finalNumber = first ? 1 : session;
+    const scannedAt = lit ? Date.parse(athlete.checked_in_at) : Number.NaN;
     return {
       id,
       name: String(athlete.name || ""),
@@ -122,10 +129,9 @@ function rosterFrom(slot, classStart, { presentOnly = false } = {}) {
       first,
       // The milestone's #04afdd shows when the scan reaches it, not before.
       milestone: athlete.milestone === true && lit,
-      // On the wall the number counts sessions done: before scanning, the ones already done
-      // (never 0; a first session stays 1); the scan adds today's.
-      number: finalNumber === null || lit || first ? finalNumber : Math.max(1, finalNumber - 1),
+      number: lit ? finalNumber : unlitNumber(finalNumber, first),
       finalNumber,
+      scannedAt: Number.isFinite(scannedAt) ? scannedAt : null,
     };
   });
   if (presentOnly) athletes = athletes.filter((a) => a.lit);
@@ -280,6 +286,94 @@ export function planChimes(scans, now, { enabled, gapMs, max, isClear }) {
     .filter((chime) => isClear(chime.at));
 }
 
+// ===== Early scans: one by one when the lobby appears =====
+// Whoever scans before :57 sees nothing (the wall shows «Sesión completa»). So when the screen goes
+// into the incoming class's lobby on its own, their cards come in unlit and then light up one by
+// one, in scan order, with the gestures of a live scan. Only for a screen that was already on
+// before :57 (not a page loaded or reloaded with the lobby on), only in the lobby, once per class.
+export function lightsUpOnArrival(names, { mode, onSince, namesFromMinute, done }) {
+  if (!names || names.compact || mode !== "lobby" || names.classStart === done) return false;
+  return Number.isFinite(onSince) && onSince < names.classStart - HOUR + namesFromMinute * MIN;
+}
+
+// The ids of the athletes who scanned, the first to scan first; without a scan time, after the
+// others, in wall order.
+export function scanOrder(athletes) {
+  const at = (a) => (a.scannedAt === null ? Infinity : a.scannedAt);
+  return athletes
+    .map((athlete, index) => ({ athlete, index }))
+    .filter(({ athlete }) => athlete.lit)
+    .sort((x, y) => at(x.athlete) - at(y.athlete) || x.index - y.index)
+    .map(({ athlete }) => athlete.id);
+}
+
+// Time between two cards: gapMs, tighter with many, so the sequence lasts about as long as six.
+export function lightUpGapMs(count, { gapMs, spanMs, minGapMs }) {
+  if (count <= 1) return gapMs;
+  return Math.round(Math.min(gapMs, Math.max(minGapMs, spanMs / (count - 1))));
+}
+
+// The names as the wall shows them while some cards wait their turn: a held card looks exactly
+// like one that has not scanned (number one lower, no milestone colour).
+export function holdBack(names, held) {
+  if (!names || !held || held.size === 0) return names;
+  let lit = names.lit;
+  const athletes = names.athletes.map((athlete) => {
+    if (!athlete.lit || !held.has(athlete.id)) return athlete;
+    lit -= 1;
+    return { ...athlete, lit: false, milestone: false, number: unlitNumber(athlete.finalNumber, athlete.first) };
+  });
+  return { ...names, lit, athletes };
+}
+
+// The cards waiting to light. step(now) hands out at most one card per call, gapMs apart. Someone
+// who scans while the sequence runs (or within one gap of its end) joins the end of the queue, so
+// two cards never light at once and none is lost. Only the first maxSounds of each group get the
+// chime, the same cap as several scans at once.
+export function createLightUp({ maxSounds }) {
+  let classStart = null;
+  let queue = [];
+  let seen = new Set();
+  let nextAt = 0;
+  let gapMs = 0;
+  const enqueue = (ids) => {
+    ids.forEach((id, index) => {
+      seen.add(id);
+      queue.push({ id, sound: index < maxSounds });
+    });
+  };
+  const cancel = () => {
+    queue = [];
+    nextAt = 0;
+  };
+  return {
+    start(names, now, { delayMs, gap }) {
+      cancel();
+      classStart = names.classStart;
+      seen = new Set();
+      gapMs = gap;
+      nextAt = now + delayMs;
+      enqueue(scanOrder(names.athletes));
+      return queue.length;
+    },
+    absorb(names, now) {
+      if (!queue.length && !(now < nextAt)) return;
+      if (!names || names.compact || names.classStart !== classStart) return cancel();
+      const lit = new Set(names.athletes.filter((a) => a.lit).map((a) => a.id));
+      queue = queue.filter((entry) => lit.has(entry.id));
+      enqueue(scanOrder(names.athletes).filter((id) => !seen.has(id)));
+    },
+    step(now) {
+      if (!queue.length || now < nextAt) return null;
+      nextAt = now + gapMs;
+      return queue.shift();
+    },
+    held: () => new Set(queue.map((entry) => entry.id)),
+    lastClass: () => classStart,
+    cancel,
+  };
+}
+
 // ===== Studio music =====
 // Low from «Sesión completa» until `restoreMinute` of the next class, and around every phrase.
 // lineDurationMs(line) returns the phrase length, or null when it will not play.
@@ -302,11 +396,13 @@ export function musicShouldBeLow(now, schedule, { lineDurationMs, leadMs, tailMs
 
 // ===== Demo data (?demo=1, ?athletes=1..10) =====
 // scan: seconds from the class start (null = never scans). The first six are the default demo:
-// present, one absent (Belén) and one who arrives late, at minute 10 (Tomás).
+// two who scan before :57 (Luna at :56:20, Agustina at :56:45: they light up one by one when the
+// lobby appears), a live scan with the milestone at :57:10 (Marta), one absent (Belén) and one who
+// arrives late, at minute 10 (Tomás).
 export const DEMO_ROSTER = [
-  { id: "demo-agustina", name: "Agustina", session: 1, firstSession: true, scan: -150 },
+  { id: "demo-agustina", name: "Agustina", session: 1, firstSession: true, scan: -195 },
   { id: "demo-marta", name: "Marta", session: 100, milestone: true, scan: -170 },
-  { id: "demo-luna", name: "Luna", session: 247, scan: -125 },
+  { id: "demo-luna", name: "Luna", session: 247, scan: -220 },
   { id: "demo-tomas", name: "Tomás", session: 12, scan: 600 },
   { id: "demo-maximiliano", name: "Maximiliano", session: 88, scan: 40 },
   { id: "demo-belen", name: "Belén", session: 31, scan: null },

@@ -171,7 +171,8 @@ pantalla hable sin que nadie la toque, abrí Chrome con este acceso directo
 - `now=HH:MM:SS` arranca un reloj simulado a esa hora; `speed=N` lo acelera.
 - `demo=1` usa 6 atletas falsos (con su número de sesión, una primera sesión y
   un hito) que se van encendiendo, uno ausente y uno que llega tarde (minuto
-  10); `athletes=N` (de 1 a 10) cambia cuántos son.
+  10); `athletes=N` (de 1 a 10) cambia cuántos son. Dos escanean antes de las
+  :57: con `now=20:56:50` se ve cómo se encienden de a uno al aparecer el lobby.
   `demo=first` simula la primera clase del bloque (sin clase anterior) y
   `demo=idle`, un día sin clases.
 - `mute=1` calla la voz.
@@ -229,6 +230,12 @@ Endpoints:
   corto y suave, sintetizado en la página (`public/screen/v2/chime.js`, sin
   archivos); en un hito, dos notas. No baja la música, no suena encima de la
   voz y no suena al cargar la página ni con `mute=1`.
+- Los que escanean antes de las :57 no ven nada (la pantalla está en «Sesión
+  completa»). Cuando la pantalla pasa sola al lobby, sus tarjetas entran
+  apagadas y se encienden de a una, en orden de escaneo, cada 0,55 s, con el
+  mismo número que sube y el mismo tono que un escaneo en vivo (tono solo para
+  los tres primeros). Al cargar o recargar la página con el lobby ya en curso
+  aparecen encendidas, como siempre.
 - Los textos de pantalla y los tiempos están arriba de `public/screen/v2/app.js`.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
