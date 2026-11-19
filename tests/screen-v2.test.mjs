@@ -9,15 +9,20 @@ import {
   chimeClear,
   computeView,
   createClassMemory,
+  createLightUp,
   demoLobby,
   dueCues,
+  holdBack,
   hourStartOf,
+  lightUpGapMs,
+  lightsUpOnArrival,
   lobbyPollDelayMs,
   musicShouldBeLow,
   newScans,
   outputTimeFor,
   planChimes,
   sameDayAt,
+  scanOrder,
   voiceFileUrl,
   voiceStatus,
 } from "../public/screen/v2/timeline.js";
@@ -137,8 +142,8 @@ test("«Sesión completa» from :55, then from :57 the white lobby of the class 
     ["lobby", "lobby", true, null, "03:00", at("21:00")]
   );
   assert.equal(lobby.names.total, 6);
-  assert.equal(lobby.names.lit, 0);
-  assert.equal(view("20:57:10", schedule).names.lit, 1);
+  assert.equal(lobby.names.lit, 2, "Luna and Agustina scanned before :57");
+  assert.equal(view("20:57:10", schedule).names.lit, 3);
   assert.equal(view("20:59:36", schedule).mode, "lobby");
 
   assert.deepEqual([view("20:59:45", schedule).final, view("20:59:45", schedule).num], [false, "00:15"]);
@@ -175,8 +180,8 @@ test("from minute 5 to :55 the row has only the athletes present, from current.a
     row.names.athletes.map((a) => [a.name, a.lit]),
     [
       ["Agustina", true],
-      ["Marta", true],
       ["Luna", true],
+      ["Marta", true],
       ["Maximiliano", true],
     ],
     "Tomás has not arrived yet and Belén never comes: neither is on the wall"
@@ -197,6 +202,7 @@ test("a late arrival joins the row when they scan", () => {
     milestone: false,
     number: 12,
     finalNumber: 12,
+    scannedAt: at("21:10"),
   });
   assert.equal(after.length, 5);
 });
@@ -358,8 +364,8 @@ test("demo lobby keeps the portal order and shows every card state", () => {
     lobby.athletes.map((a) => [a.name, Boolean(a.checked_in_at), a.session_number, a.first_session, a.milestone]),
     [
       ["Agustina", true, 1, true, false],
-      ["Marta", true, 100, false, true],
       ["Luna", true, 247, false, false],
+      ["Marta", true, 100, false, true],
       ["Tomás", false, 12, false, false],
       ["Maximiliano", false, 88, false, false],
       ["Belén", false, 31, false, false],
@@ -368,10 +374,10 @@ test("demo lobby keeps the portal order and shows every card state", () => {
   assert.equal(demoLobby(at("21:00"), at("21:00"), 8).athletes.length, 8);
   assert.equal(demoLobby(at("21:00"), at("21:00"), 10).athletes.length, 10);
   assert.deepEqual(
-    demoLobby(at("21:00"), at("20:57:20"), 2).athletes.map((a) => [a.name, Boolean(a.checked_in_at)]),
+    demoLobby(at("21:00"), at("20:57:00"), 2).athletes.map((a) => [a.name, Boolean(a.checked_in_at)]),
     [
-      ["Agustina", false],
-      ["Marta", true],
+      ["Agustina", true],
+      ["Marta", false],
     ]
   );
 });
@@ -449,7 +455,7 @@ test("Argentina wall clock helpers", () => {
 test("a chime for each card that lights up: a scan, a milestone, a late arrival into the row", () => {
   const schedule = withCurrent();
   const names = (time) => view(time, schedule).names;
-  assert.deepEqual(newScans(names("20:57:54"), names("20:57:56")), [{ id: "demo-luna", milestone: false }]);
+  assert.deepEqual(newScans(names("21:00:39"), names("21:00:41")), [{ id: "demo-maximiliano", milestone: false }]);
   assert.deepEqual(newScans(names("20:57:09"), names("20:57:11")), [{ id: "demo-marta", milestone: true }]);
   assert.deepEqual(newScans(names("21:09:59"), names("21:10:01")), [{ id: "demo-tomas", milestone: false }]);
   assert.deepEqual(newScans(names("21:20"), names("21:20:05")), [], "nothing new, nothing plays");
@@ -501,4 +507,190 @@ test("the chime is short and well under the voice", () => {
   assert.ok(CHIME.accentDelay + CHIME.length <= 0.6, "the milestone version stays short");
   assert.ok(CHIME.level <= 0.25, "peak around -12.5 dBFS, about 12 LU under the voice");
   assert.ok(CHIME.accent > CHIME.note, "the milestone's second note is higher");
+});
+
+// ===== Early scans: one by one when the lobby appears =====
+const lobbyWith = (athletes) => ({
+  hasClassAt: () => true,
+  lobbyFor: (classStart) => ({ starts_at: new Date(classStart).toISOString(), coach: "Joaquín", athletes }),
+});
+const scannedAt = (time) => new Date(at(time)).toISOString();
+const ARRIVAL = { mode: "lobby", onSince: at("20:56:50"), namesFromMinute: 57, done: null };
+
+test("early scans: who lights up one by one at :57, and in scan order", () => {
+  const demo = view("20:57", withCurrent());
+  assert.deepEqual(scanOrder(demo.names.athletes), ["demo-luna", "demo-agustina"], "Luna scanned at :56:20, Agustina at :56:45");
+  assert.equal(lightsUpOnArrival(demo.names, { ...ARRIVAL, mode: demo.mode }), true);
+
+  const names = view(
+    "20:57",
+    lobbyWith([
+      { id: "a", name: "Agustina", first_session: true, session_number: 1, checked_in_at: scannedAt("20:56:45") },
+      { id: "l", name: "Luna", session_number: 247, checked_in_at: scannedAt("20:56:20") },
+      { id: "m", name: "Marta", session_number: 100, milestone: true, checked_in_at: scannedAt("20:55:10") },
+      { id: "x", name: "Sol", session_number: 5, checked_in_at: "yes" },
+      { id: "b", name: "Belén", session_number: 31, checked_in_at: null },
+    ])
+  ).names;
+  assert.deepEqual(scanOrder(names.athletes), ["m", "l", "a", "x"], "first to scan first; no scan time goes last; Belén waits");
+
+  const held = holdBack(names, new Set(scanOrder(names.athletes)));
+  assert.deepEqual(
+    held.athletes.map((c) => [c.name, c.lit, c.number, c.milestone]),
+    [
+      ["Agustina", false, 1, false],
+      ["Luna", false, 246, false],
+      ["Marta", false, 99, false],
+      ["Sol", false, 4, false],
+      ["Belén", false, 30, false],
+    ],
+    "they come in like anyone who has not scanned: one lower, no milestone colour yet, a first session stays 1"
+  );
+  assert.equal(held.lit, 0);
+  assert.equal(holdBack(names, new Set()), names);
+  assert.deepEqual(holdBack(names, new Set(["l"])).athletes.map((c) => c.lit), [true, false, true, true, false]);
+});
+
+test("early scans: not on a page loaded with the lobby on, not in the class, once per class", () => {
+  const schedule = withCurrent();
+  const lobby = view("20:57:30", schedule).names;
+  assert.equal(lightsUpOnArrival(lobby, ARRIVAL), true, "on since :56:50: the screen went into the lobby on its own");
+  assert.equal(lightsUpOnArrival(lobby, { ...ARRIVAL, onSince: at("20:30") }), true, "on since «Sesión completa» or earlier");
+  assert.equal(lightsUpOnArrival(lobby, { ...ARRIVAL, onSince: at("20:57:20") }), false, "reloaded with the lobby on");
+  assert.equal(lightsUpOnArrival(lobby, { ...ARRIVAL, onSince: at("20:57") }), false, "loaded right at :57");
+  assert.equal(lightsUpOnArrival(lobby, { ...ARRIVAL, onSince: Number.NaN }), false);
+  assert.equal(lightsUpOnArrival(lobby, { ...ARRIVAL, done: at("21:00") }), false, "the names came back after a blip");
+  assert.equal(lightsUpOnArrival(lobby, { ...ARRIVAL, done: at("20:00") }), true, "the last class's sequence does not count");
+  assert.equal(lightsUpOnArrival(view("21:02", schedule).names, { ...ARRIVAL, mode: "class" }), false, "the class view");
+  assert.equal(lightsUpOnArrival(view("21:07", schedule).names, { ...ARRIVAL, mode: "class" }), false, "the class row");
+  assert.equal(lightsUpOnArrival(null, ARRIVAL), false);
+});
+
+test("early scans: one card at a time, a gap apart, a chime for the first three only", () => {
+  const six = lobbyWith(
+    ["20:56:00", "20:56:10", "20:56:20", "20:56:30", "20:56:40", "20:56:50"].map((time, index) => ({
+      id: `p${index}`,
+      name: `P${index}`,
+      session_number: 10 + index,
+      checked_in_at: scannedAt(time),
+    }))
+  );
+  const names = view("20:57", six).names;
+  const lightUp = createLightUp({ maxSounds: 3 });
+  assert.equal(lightUp.start(names, 0, { delayMs: 1200, gap: 550 }), 6);
+  assert.equal(lightUp.held().size, 6);
+  assert.equal(lightUp.step(1199), null, "the cards are still coming in");
+
+  const released = [];
+  for (let t = 1200; t <= 6000; t += 25) {
+    const card = lightUp.step(t);
+    if (card) released.push([card.id, card.sound, t]);
+  }
+  assert.deepEqual(released, [
+    ["p0", true, 1200],
+    ["p1", true, 1750],
+    ["p2", true, 2300],
+    ["p3", false, 2850],
+    ["p4", false, 3400],
+    ["p5", false, 3950],
+  ]);
+  assert.equal(lightUp.held().size, 0);
+  assert.ok(released.at(-1)[2] - released[0][2] <= 3000, "six cards in under 3 s");
+
+  // A lagging tab never lights two at once: the next one waits a full gap from the last.
+  const late = createLightUp({ maxSounds: 3 });
+  late.start(names, 0, { delayMs: 1200, gap: 550 });
+  assert.equal(late.step(5000).id, "p0");
+  assert.equal(late.step(5000), null);
+  assert.equal(late.step(5550).id, "p1");
+});
+
+test("early scans: the gap tightens with many so the whole sequence stays short", () => {
+  const options = { gapMs: 550, spanMs: 2750, minGapMs: 350 };
+  assert.deepEqual([1, 2, 6, 7, 10].map((n) => lightUpGapMs(n, options)), [550, 550, 550, 458, 350]);
+});
+
+test("early scans: someone who scans during the sequence joins the end, nobody is lost", () => {
+  const athletes = [
+    { id: "a", name: "Agustina", first_session: true, session_number: 1, checked_in_at: scannedAt("20:56:45") },
+    { id: "l", name: "Luna", session_number: 247, checked_in_at: scannedAt("20:56:20") },
+    { id: "m", name: "Marta", session_number: 100, milestone: true, checked_in_at: null },
+    { id: "t", name: "Tomás", session_number: 12, checked_in_at: null },
+  ];
+  const names = (marta, tomas) =>
+    view(
+      "20:57:02",
+      lobbyWith(athletes.map((a) => (a.id === "m" ? { ...a, checked_in_at: marta } : a.id === "t" ? { ...a, checked_in_at: tomas } : a)))
+    ).names;
+
+  const lightUp = createLightUp({ maxSounds: 3 });
+  lightUp.start(names(null, null), 0, { delayMs: 1200, gap: 550 });
+  assert.equal(lightUp.step(1200).id, "l");
+  lightUp.absorb(names(scannedAt("20:57:01"), null), 1300);
+  assert.deepEqual([...lightUp.held()], ["a", "m"], "Marta scanned during the sequence: after Agustina, not over her");
+  const held = holdBack(names(scannedAt("20:57:01"), null), lightUp.held());
+  assert.deepEqual(held.athletes.map((c) => [c.name, c.lit, c.number, c.milestone]), [
+    ["Agustina", false, 1, false],
+    ["Luna", true, 247, false],
+    ["Marta", false, 99, false],
+    ["Tomás", false, 11, false],
+  ]);
+  assert.equal(lightUp.step(1750).id, "a");
+  const marta = lightUp.step(2300);
+  assert.deepEqual([marta.id, marta.sound], ["m", true], "a live scan keeps its chime");
+
+  // Within one gap of the end a new scan still waits its turn; after it, scans light up as always.
+  lightUp.absorb(names(scannedAt("20:57:01"), scannedAt("20:57:02")), 2500);
+  assert.deepEqual([...lightUp.held()], ["t"]);
+  assert.equal(lightUp.step(2600), null);
+  assert.equal(lightUp.step(2850).id, "t");
+  const after = createLightUp({ maxSounds: 3 });
+  after.start(names(null, null), 0, { delayMs: 0, gap: 550 });
+  after.step(0);
+  after.step(550);
+  after.absorb(names(scannedAt("20:57:01"), null), 5000);
+  assert.equal(after.held().size, 0, "the sequence is over: Marta lights up at once, like any live scan");
+});
+
+test("early scans: the queue lets go at minute 5, on a class change, or without names", () => {
+  const start = () => {
+    const lightUp = createLightUp({ maxSounds: 3 });
+    lightUp.start(view("20:57", withCurrent()).names, 0, { delayMs: 1200, gap: 550 });
+    return lightUp;
+  };
+  for (const [label, names] of [
+    ["the class row", view("21:05", withCurrent()).names],
+    ["another class", view("21:57", withCurrent()).names],
+    ["no names", null],
+  ]) {
+    const lightUp = start();
+    lightUp.absorb(names, 100);
+    assert.equal(lightUp.held().size, 0, label);
+  }
+  const unscanned = start();
+  unscanned.absorb(
+    view("20:57", lobbyWith([{ id: "demo-luna", name: "Luna", session_number: 247, checked_in_at: scannedAt("20:56:20") }])).names,
+    100
+  );
+  assert.deepEqual([...unscanned.held()], ["demo-luna"], "a card no longer scanned (or no longer booked) leaves the queue");
+});
+
+test("demo: two scan before :57 and light up at the lobby; Marta's milestone is still a live scan", () => {
+  const schedule = withCurrent();
+  assert.equal(view("20:56:50", schedule).mode, "done");
+  const lobby = view("20:57", schedule);
+  assert.deepEqual(
+    lobby.names.athletes.map((a) => [a.name, a.lit]),
+    [
+      ["Agustina", true],
+      ["Luna", true],
+      ["Marta", false],
+      ["Tomás", false],
+      ["Maximiliano", false],
+      ["Belén", false],
+    ]
+  );
+  assert.deepEqual(newScans(view("20:57:09", schedule).names, view("20:57:11", schedule).names), [
+    { id: "demo-marta", milestone: true },
+  ]);
 });

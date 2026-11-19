@@ -7,9 +7,13 @@ import {
   chimeClear,
   computeView,
   createClassMemory,
+  createLightUp,
   demoLobby,
   dueCues,
   hhmm,
+  holdBack,
+  lightUpGapMs,
+  lightsUpOnArrival,
   lobbyPollDelayMs,
   hourStartOf,
   hourStartOfIso,
@@ -18,6 +22,7 @@ import {
   outputTimeFor,
   planChimes,
   sameDayAt,
+  scanOrder,
   voiceFileUrl,
   voiceStatus,
   wallTime,
@@ -59,6 +64,11 @@ const SETTINGS = {
   CHIME_GAP_MS: 300, // varios escaneos juntos: uno por atleta, separados
   CHIME_MAX: 3,
   CHIME_CLEAR_MS: 1000, // no suena si una frase de la voz empieza dentro de este tiempo
+  // Los que escanearon antes de :57 se encienden de a uno cuando aparece el lobby (ver lightsUpOnArrival).
+  LIGHT_UP_GAP_MS: 550, // entre una tarjeta y la siguiente
+  LIGHT_UP_SPAN_MS: 2750, // con más de 6, la separación se achica para no pasar de esto (hasta LIGHT_UP_MIN_GAP_MS)
+  LIGHT_UP_MIN_GAP_MS: 350,
+  LIGHT_UP_PAUSE_MS: 250, // después de que entran las tarjetas, antes de la primera
   LOBBY_CLASS_MS: 15000, // con una clase en curso (de :10 a :50), para que el que llega tarde aparezca rápido
   PORTAL_FRESH_MS: 3 * 60 * 1000,
   PORTAL_GRACE_MS: 20 * 1000, // tras un error del portal, cuánto se siguen usando los últimos datos
@@ -282,7 +292,7 @@ function render(view) {
     else el.num.classList.remove("tick");
   }
   if (view.fill !== null) el.fill.style.width = `${(view.fill * 100).toFixed(3)}%`;
-  renderNames(view.names);
+  renderNames(namesForWall(view));
 
   if (cut) {
     void body.offsetWidth;
@@ -377,11 +387,54 @@ function cardParts(li) {
   return [...li.children];
 }
 
+// ===== Early scans =====
+// Those who scanned before :57 light up one by one when the lobby appears on its own: their cards
+// come in unlit (held) and are let go one at a time from renderTick, after the cards are in. Each
+// release is an ordinary scan for renderNames: the number rolls up, the card ignites, the chime
+// plays (only for the first CHIME_MAX; the rest light up silently, listed in quietScans).
+const CARD_ENTER_MS = 600; // .athlete.enter in style.css: 0.6 s, 70 ms between cards
+const CARD_STAGGER_MS = 70;
+const LOBBY_OPEN_MS = 700; // the strip opens in 0.7 s
+const lightUp = createLightUp({ maxSounds: SETTINGS.CHIME_MAX });
+const quietScans = new Set();
+let onSince = Number.NaN; // the screen's clock at its first frame
+
+function namesForWall(view) {
+  const names = view.names;
+  const now = performance.now();
+  const options = { mode: view.mode, onSince, namesFromMinute: SETTINGS.NAMES_FROM_MINUTE, done: lightUp.lastClass() };
+  if (!namesShown && lightsUpOnArrival(names, options)) {
+    const count = scanOrder(names.athletes).length;
+    const cardsIn = CARD_ENTER_MS + CARD_STAGGER_MS * Math.max(0, names.athletes.length - 1);
+    lightUp.start(names, now, {
+      delayMs: Math.max(cardsIn, LOBBY_OPEN_MS) + SETTINGS.LIGHT_UP_PAUSE_MS,
+      gap: lightUpGapMs(count, {
+        gapMs: SETTINGS.LIGHT_UP_GAP_MS,
+        spanMs: SETTINGS.LIGHT_UP_SPAN_MS,
+        minGapMs: SETTINGS.LIGHT_UP_MIN_GAP_MS,
+      }),
+    });
+  } else {
+    lightUp.absorb(names, now);
+  }
+  return holdBack(names, lightUp.held());
+}
+
+// One card from the queue when its time comes; true when the names must be drawn again.
+function stepLightUp() {
+  const released = lightUp.step(performance.now());
+  if (!released) return false;
+  if (!released.sound) quietScans.add(released.id);
+  return true;
+}
+
 function renderNames(names) {
   const key = names ? JSON.stringify([names.classStart, names.coach, names.compact, names.athletes]) : "";
   if (key === namesKey) return;
   namesKey = key;
-  playScanChimes(newScans(lastNames, names));
+  const scans = newScans(lastNames, names).filter((scan) => !quietScans.has(scan.id));
+  quietScans.clear();
+  playScanChimes(scans);
   lastNames = names;
 
   if (!names) {
@@ -860,6 +913,7 @@ window.upsScreen = {
     lastCue,
     lastCueAt,
     musicLow: musicLowSent,
+    lightingUp: [...lightUp.held()],
     portal: portalData() ? "ok" : portal.answered ? "fallback" : "waiting",
     knownClasses: classMemory.list().map((epoch) => new Date(epoch).toISOString()),
   }),
@@ -874,6 +928,7 @@ function renderTick() {
   if (!booted) return;
   const now = nowMs();
   const second = Math.floor(now / SEC);
+  if (stepLightUp()) dirty = true;
   if (dirty || second !== lastSecond) {
     dirty = false;
     lastSecond = second;
@@ -918,6 +973,7 @@ async function boot() {
 
   booted = true;
   dirty = true;
+  onSince = nowMs();
   // The first frame snaps into place (no transitions while booting), then fades in.
   renderTick();
   requestAnimationFrame(() => requestAnimationFrame(revealFrame));
