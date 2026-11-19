@@ -22,7 +22,7 @@ function freePort() {
   });
 }
 
-async function startPortal() {
+async function startPortal(current = null) {
   const requests = [];
   const server = http.createServer((req, res) => {
     requests.push({ url: req.url, authorization: req.headers.authorization });
@@ -31,7 +31,7 @@ async function startPortal() {
       JSON.stringify({
         now: "2026-11-18T20:57:12-03:00",
         studio: "A",
-        current: null,
+        current,
         lobby: {
           starts_at: "2026-11-18T21:00:00-03:00",
           coach: "Joaquín",
@@ -208,4 +208,53 @@ test("/screen/tts only speaks the old /screen phrases; the v2 voice is served as
   assert.match(file.headers.get("content-type"), /^audio\/mpeg/);
   const size = statSync(fileURLToPath(new URL("../public/screen/v2/voice/start.mp3", import.meta.url))).size;
   assert.equal((await file.arrayBuffer()).byteLength, size);
+});
+
+test("the lobby passes the class in progress through, with its athletes once the portal sends them", async (t) => {
+  const current = {
+    starts_at: "2026-11-18T20:00:00-03:00",
+    ends_at: "2026-11-18T20:55:00-03:00",
+    coach: "Sol",
+    athletes: [
+      { id: "c1", name: "Ana", checked_in_at: "2026-11-18T19:58:00-03:00", first_session: false, session_number: 40, milestone: false, extra: "x" },
+      { id: "c2", name: "Juan", checked_in_at: null, first_session: true, session_number: 1, milestone: false },
+    ],
+  };
+  const portal = await startPortal(current);
+  const server = await startServer({
+    UPS_PORTAL_API_BASE_URL: portal.url,
+    STUDIO_SCREEN_API_TOKEN: PORTAL_TOKEN,
+    SCREEN_DISPLAY_KEY: SCREEN_KEY,
+  });
+  t.after(async () => {
+    await server.stop();
+    await portal.close();
+  });
+
+  const answer = await lobby(server, { "x-screen-key": SCREEN_KEY });
+  assert.deepEqual(answer.body.current, {
+    starts_at: current.starts_at,
+    ends_at: current.ends_at,
+    coach: "Sol",
+    athletes: [
+      { id: "c1", name: "Ana", checked_in_at: "2026-11-18T19:58:00-03:00", first_session: false, session_number: 40, milestone: false },
+      { id: "c2", name: "Juan", checked_in_at: null, first_session: true, session_number: 1, milestone: false },
+    ],
+  });
+});
+
+test("an older portal's current (only starts_at and ends_at) passes without athletes", async (t) => {
+  const portal = await startPortal({ starts_at: "2026-11-18T20:00:00-03:00", ends_at: "2026-11-18T20:55:00-03:00" });
+  const server = await startServer({
+    UPS_PORTAL_API_BASE_URL: portal.url,
+    STUDIO_SCREEN_API_TOKEN: PORTAL_TOKEN,
+    SCREEN_DISPLAY_KEY: SCREEN_KEY,
+  });
+  t.after(async () => {
+    await server.stop();
+    await portal.close();
+  });
+
+  const answer = await lobby(server, { "x-screen-key": SCREEN_KEY });
+  assert.deepEqual(answer.body.current, { starts_at: "2026-11-18T20:00:00-03:00", ends_at: "2026-11-18T20:55:00-03:00" });
 });

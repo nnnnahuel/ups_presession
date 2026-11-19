@@ -10,6 +10,7 @@ import {
   demoLobby,
   dueCues,
   hourStartOf,
+  lobbyPollDelayMs,
   musicShouldBeLow,
   outputTimeFor,
   sameDayAt,
@@ -141,15 +142,83 @@ test("«Sesión completa» from :55, then from :57 the white lobby of the class 
   assert.equal(view("20:59:59", schedule).num, "1");
 });
 
-test(":00 starts the new class and the names stay until minute 5", () => {
+test(":00 starts the new class and the big names stay until minute 5", () => {
   const schedule = scheduleWith(["20:00", "21:00"], { lobby: true });
   const start = view("21:00", schedule);
   assert.deepEqual([start.mode, start.stage, start.inverted, start.num], ["class", "work", false, "55:00"]);
-  assert.equal(start.names.total, 6);
-  assert.equal(view("21:00:39", schedule).names.lit, 4);
-  assert.equal(view("21:00:40", schedule).names.lit, 5);
+  assert.deepEqual([start.names.total, start.names.compact], [6, false]);
+  assert.equal(view("21:00:39", schedule).names.lit, 3);
+  assert.equal(view("21:00:40", schedule).names.lit, 4);
   assert.notEqual(view("21:04:59", schedule).names, null);
-  assert.equal(view("21:05", schedule).names, null);
+  assert.equal(view("21:05", schedule).names, null, "without current.athletes: exactly as before");
+});
+
+// A class every hour; the portal's lobby and current both come from the demo roster.
+const withCurrent = (currentFor = (classStart, now) => demoLobby(classStart, now)) => ({
+  hasClassAt: () => true,
+  lobbyFor: (classStart, now) => demoLobby(classStart, now),
+  currentFor,
+});
+
+test("from minute 5 to :55 the row has only the athletes present, from current.athletes", () => {
+  const schedule = withCurrent();
+  const big = view("21:04:59", schedule).names;
+  assert.deepEqual([big.compact, big.total], [false, 6]);
+
+  const row = view("21:05", schedule);
+  assert.deepEqual([row.mode, row.stage, row.names.compact, row.names.coach], ["class", "work", true, "Joaquín"]);
+  assert.deepEqual(
+    row.names.athletes.map((a) => [a.name, a.lit]),
+    [
+      ["Agustina", true],
+      ["Marta", true],
+      ["Luna", true],
+      ["Maximiliano", true],
+    ],
+    "Tomás has not arrived yet and Belén never comes: neither is on the wall"
+  );
+  const last = view("21:50", schedule);
+  assert.deepEqual([last.stage, last.last, last.names.compact], ["last", true, true]);
+});
+
+test("a late arrival joins the row when they scan", () => {
+  const schedule = withCurrent();
+  assert.ok(!view("21:09:59", schedule).names.athletes.some((a) => a.name === "Tomás"));
+  const after = view("21:10", schedule).names.athletes;
+  assert.deepEqual(after.at(-1), { id: "demo-tomas", name: "Tomás", lit: true, first: false, milestone: false, number: 12 });
+  assert.equal(after.length, 5);
+});
+
+test("without current.athletes, or with nobody present, there are no names after minute 5", () => {
+  const oldPortal = withCurrent((classStart) => ({ starts_at: new Date(classStart).toISOString(), ends_at: null }));
+  assert.notEqual(view("21:04", oldPortal).names, null);
+  assert.equal(view("21:05", oldPortal).names, null);
+  assert.equal(view("21:30", oldPortal).names, null);
+
+  const nobody = withCurrent((classStart) => ({
+    starts_at: new Date(classStart).toISOString(),
+    athletes: [{ id: "x", name: "Belén", checked_in_at: null }],
+  }));
+  assert.equal(view("21:20", nobody).names, null);
+});
+
+test("the row ends with the class: «Sesión completa» at :55, the next lobby at :57", () => {
+  const schedule = withCurrent();
+  assert.equal(view("21:54:59", schedule).names.compact, true);
+  const done = view("21:55", schedule);
+  assert.deepEqual([done.mode, done.names], ["done", null]);
+  const lobby = view("21:57", schedule);
+  assert.deepEqual([lobby.mode, lobby.names.compact, lobby.names.classStart], ["lobby", false, at("22:00")]);
+});
+
+test("the portal is asked every 15 s during a class, every 5 s from :50 to :10", () => {
+  const options = { fastMs: 5000, classMs: 15000, slowMs: 60000 };
+  assert.equal(lobbyPollDelayMs(at("20:20"), true, options), 15000);
+  assert.equal(lobbyPollDelayMs(at("20:20"), false, options), 60000);
+  assert.equal(lobbyPollDelayMs(at("20:49:50"), true, options), 10000, "never later than :50");
+  assert.equal(lobbyPollDelayMs(at("20:50"), true, options), 5000);
+  assert.equal(lobbyPollDelayMs(at("21:05"), true, options), 5000);
+  assert.equal(lobbyPollDelayMs(at("20:30"), true, { ...options, rate: 10 }), 15000);
 });
 
 test("first class of the day: the same white lobby from :57, nothing before", () => {
@@ -279,12 +348,13 @@ test("demo lobby keeps the portal order and shows every card state", () => {
       ["Agustina", true, 1, true, false],
       ["Marta", true, 100, false, true],
       ["Luna", true, 247, false, false],
-      ["Tomás", true, 12, false, false],
+      ["Tomás", false, 12, false, false],
       ["Maximiliano", false, 88, false, false],
       ["Belén", false, 31, false, false],
     ]
   );
   assert.equal(demoLobby(at("21:00"), at("21:00"), 8).athletes.length, 8);
+  assert.equal(demoLobby(at("21:00"), at("21:00"), 10).athletes.length, 10);
   assert.deepEqual(
     demoLobby(at("21:00"), at("20:57:20"), 2).athletes.map((a) => [a.name, Boolean(a.checked_in_at)]),
     [

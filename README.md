@@ -170,7 +170,8 @@ pantalla hable sin que nadie la toque, abrí Chrome con este acceso directo
 
 - `now=HH:MM:SS` arranca un reloj simulado a esa hora; `speed=N` lo acelera.
 - `demo=1` usa 6 atletas falsos (con su número de sesión, una primera sesión y
-  un hito) que se van encendiendo; `athletes=N` (de 1 a 8) cambia cuántos son.
+  un hito) que se van encendiendo, uno ausente y uno que llega tarde (minuto
+  10); `athletes=N` (de 1 a 10) cambia cuántos son.
   `demo=first` simula la primera clase del bloque (sin clase anterior) y
   `demo=idle`, un día sin clases.
 - `mute=1` calla la voz.
@@ -197,7 +198,9 @@ Endpoints:
   `Authorization: Bearer ${STUDIO_SCREEN_API_TOKEN}` y guarda la respuesta
   4 segundos. De cada atleta pasa `id`, `name`, `checked_in_at`,
   `first_session`, `session_number` (entero ≥ 1, si no `null`: la ficha muestra
-  solo el nombre) y `milestone`. Sin clave correcta responde `{"ok": false}` sin preguntarle nada
+  solo el nombre) y `milestone`. De la clase en curso (`current`) pasa
+  `starts_at` y `ends_at`, y además `coach` y `athletes` (misma forma) cuando
+  el portal los manda. Sin clave correcta responde `{"ok": false}` sin preguntarle nada
   al portal; sin las variables del portal o si el portal falla, también
   `{"ok": false}`. En esos casos la pantalla sigue por reloj como si hubiera
   clase todas las horas, sin nombres.
