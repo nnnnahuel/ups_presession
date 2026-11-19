@@ -222,8 +222,12 @@ body.has-lobby .lobby {
 /* Only names (older bridge): a shorter strip, so the title stays next to them. */
 body.has-lobby .lobby.compact { height: 7.4cqw; }
 
+/* Without a coach the line is hidden but keeps its place, so the cards do not move. */
+.lobby-head.empty { visibility: hidden; }
+
 .lobby-head {
   flex: none;
+  min-height: 1.25em;
   font-size: 1.05cqw;
   font-weight: 500;
   letter-spacing: 0.32em;
@@ -433,20 +437,6 @@ body.no-bar .progress { opacity: 0; }
   stroke-linejoin: round;
 }
 
-.flash {
-  position: absolute;
-  inset: 0;
-  background: #fff;
-  opacity: 0;
-  pointer-events: none;
-}
-.flash.on { animation: flash 0.5s ease-out; }
-
-@keyframes flash {
-  from { opacity: 0.92; }
-  to { opacity: 0; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .num.tick, body.go .mid, .athlete.enter, .athlete.ignite .sn, .flash.on, .gate { animation: none; }
+  .num.tick, body.go .mid, .athlete.enter, .athlete.ignite .sn, .gate { animation: none; }
 }

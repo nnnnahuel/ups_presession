@@ -29,7 +29,7 @@ const TEXT = {
     lobby: { phase: (hour) => (hour === 1 ? "Turno de la 1" : `Turno de las ${hour}`), sub: "Escaneá tu QR al entrar" },
   },
   idleNext: (time) => `Próximo turno ${time}`,
-  namesTitle: (time, coach) => (coach ? `Turno ${time} · Coach ${coach}` : `Turno ${time}`),
+  coachLine: (coach) => `Coach ${coach}`, // arriba de los nombres; sin coach el renglón no se muestra
   sessionLabel: "Sesión",
   firstSessionLabel: "Primera sesión",
   gate: { title: "Activar sonido", hint: "Tocá la pantalla o apretá cualquier tecla" },
@@ -200,12 +200,12 @@ const el = {
   sub: $("sub"),
   fill: $("fill"),
   lobby: $("lobby"),
+  lobbyHead: $("lobbyHead"),
   lobbyTitle: $("lobbyTitle"),
   names: $("names"),
   gate: $("gate"),
   sound: $("sound"),
   testTag: $("testTag"),
-  flash: $("flash"),
 };
 
 el.place.textContent = TEXT.place[STUDIO];
@@ -272,7 +272,6 @@ function render(view) {
     void body.offsetWidth;
     requestAnimationFrame(() => body.classList.remove("cut"));
     retrigger(body, "go", 900);
-    if (before.mode === "lobby") retrigger(el.flash, "on", 700);
   }
   previous = view;
 }
@@ -325,7 +324,8 @@ function renderNames(names) {
   if (appearing) clearSlots();
   namesShown = true;
   body.classList.add("has-lobby");
-  setText(el.lobbyTitle, TEXT.namesTitle(hhmm(names.classStart), names.coach));
+  setText(el.lobbyTitle, names.coach ? TEXT.coachLine(names.coach) : "");
+  el.lobbyHead.classList.toggle("empty", !names.coach);
 
   const firstLeft = new Map();
   if (!appearing) for (const [id, li] of slots) firstLeft.set(id, li.getBoundingClientRect().left);

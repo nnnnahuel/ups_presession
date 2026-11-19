@@ -122,7 +122,7 @@ function namesFor(schedule, classStart, now) {
   });
   return {
     classStart,
-    coach: lobby.coach || null,
+    coach: typeof lobby.coach === "string" && lobby.coach.trim() ? lobby.coach.trim() : null,
     lit: athletes.filter((a) => a.lit).length,
     total: athletes.length,
     athletes,
@@ -169,18 +169,20 @@ export function computeView(now, schedule, options) {
   }
 
   const remaining = 3600 - elapsed;
+  // From :57 the screen belongs to the class coming in: its lobby, on white until the :00 cut.
+  // With a class going out, that needs names to show; otherwise «Sesión completa» stays.
   const lobbyTime = classNext && minute >= namesFromMinute;
-  if (classNow) {
+  const incoming = lobbyTime ? namesFor(schedule, next, now) : null;
+  if (lobbyTime && (incoming || !classNow)) {
+    Object.assign(view, { mode: "lobby", stage: "lobby", num: mmss(remaining), inverted: true, names: incoming });
+  } else if (classNow) {
     // The class is over: no exercise bar until the next one starts at :00.
     Object.assign(view, { mode: "done", stage: "done", num: mmss(remaining), inverted: true });
-  } else if (lobbyTime) {
-    Object.assign(view, { mode: "lobby", stage: "lobby", num: mmss(remaining) });
   }
   if (view.mode !== "idle" && classNext && remaining <= finalCountSeconds) {
     view.final = true;
     view.num = String(remaining);
   }
-  if (view.mode !== "idle" && lobbyTime) view.names = namesFor(schedule, next, now);
   return view;
 }
 

@@ -118,18 +118,23 @@ test("a missing recorded file keeps the whole voice silent and is reported", () 
   assert.deepEqual(dueCues(at("20:59:45"), everyHour, { hasLine: canSpeak, lookaheadMs: 20000, lateMs: 300 }), []);
 });
 
-test("changeover inverts at :55, shows the incoming names at :57 and counts 10 to 1", () => {
+test("«Sesión completa» from :55, then from :57 the white lobby of the class coming in, and the 10 count", () => {
   const schedule = scheduleWith(["20:00", "21:00"], { lobby: true });
   const done = view("20:55", schedule);
   assert.deepEqual([done.mode, done.inverted, done.num, done.fill, done.names], ["done", true, "05:00", null, null]);
-  assert.equal(view("20:59:52", schedule).fill, null, "no exercise bar during «Sesión completa», 10 count included");
+  assert.equal(view("20:59:52", schedule).fill, null, "no exercise bar during «Sesión completa» and the lobby, 10 count included");
   assert.notEqual(view("21:00", schedule).fill, null, "the bar is back with the new class");
+  assert.deepEqual([view("20:56:59", schedule).mode, view("20:56:59", schedule).names], ["done", null]);
 
   const lobby = view("20:57", schedule);
-  assert.equal(lobby.mode, "done");
+  assert.deepEqual(
+    [lobby.mode, lobby.stage, lobby.inverted, lobby.fill, lobby.num, lobby.nextClassStart],
+    ["lobby", "lobby", true, null, "03:00", at("21:00")]
+  );
   assert.equal(lobby.names.total, 6);
   assert.equal(lobby.names.lit, 0);
   assert.equal(view("20:57:10", schedule).names.lit, 1);
+  assert.equal(view("20:59:36", schedule).mode, "lobby");
 
   assert.deepEqual([view("20:59:45", schedule).final, view("20:59:45", schedule).num], [false, "00:15"]);
   assert.deepEqual([view("20:59:50", schedule).final, view("20:59:50", schedule).num], [true, "10"]);
@@ -147,14 +152,41 @@ test(":00 starts the new class and the names stay until minute 5", () => {
   assert.equal(view("21:05", schedule).names, null);
 });
 
-test("first class of a block: lobby on black, no «Sesión completa»", () => {
+test("first class of the day: the same white lobby from :57, nothing before", () => {
   const schedule = scheduleWith(["21:00"], { lobby: true });
   const before = view("20:55", schedule);
   assert.deepEqual([before.mode, before.nextClassStart], ["idle", at("21:00")]);
   const lobby = view("20:57", schedule);
-  assert.deepEqual([lobby.mode, lobby.inverted, lobby.num, lobby.names.total], ["lobby", false, "03:00", 6]);
-  assert.equal(view("20:59:50", schedule).num, "10");
+  assert.deepEqual([lobby.mode, lobby.inverted, lobby.fill, lobby.num, lobby.names.total], ["lobby", true, null, "03:00", 6]);
+  assert.deepEqual([view("20:59:50", schedule).final, view("20:59:50", schedule).num], [true, "10"]);
   assert.equal(view("21:00", schedule).mode, "class");
+
+  // Nobody booked yet: still the incoming class's lobby (title and countdown), without names.
+  const empty = view("20:58", scheduleWith(["21:00"]));
+  assert.deepEqual([empty.mode, empty.inverted, empty.names], ["lobby", true, null]);
+});
+
+test("without a class coming in, or without its names, «Sesión completa» stays the five minutes", () => {
+  const last = view("20:58", scheduleWith(["20:00"], { lobby: true }));
+  assert.deepEqual([last.mode, last.stage, last.names], ["done", "done", null]);
+
+  const nobody = {
+    hasClassAt: (classStart) => classStart === at("20:00") || classStart === at("21:00"),
+    lobbyFor: (classStart) => ({ starts_at: new Date(classStart).toISOString(), coach: "Joaquín", athletes: [] }),
+  };
+  const noNames = view("20:58", nobody);
+  assert.deepEqual([noNames.mode, noNames.names], ["done", null]);
+  assert.deepEqual([view("20:59:50", nobody).final, view("20:59:50", nobody).num], [true, "10"]);
+});
+
+test("the line above the names is the coach alone, and missing without one", () => {
+  const withCoach = (coach) => ({
+    hasClassAt: () => true,
+    lobbyFor: (classStart) => ({ starts_at: new Date(classStart).toISOString(), coach, athletes: [{ id: "a", name: "Marta" }] }),
+  });
+  assert.equal(view("20:58", withCoach(" Joaquín ")).names.coach, "Joaquín");
+  assert.equal(view("21:01", withCoach("Joaquín")).names.coach, "Joaquín");
+  for (const coach of [null, undefined, "", "   ", 7]) assert.equal(view("20:58", withCoach(coach)).names.coach, null);
 });
 
 test("last class of a block counts to the hour without the 10 count", () => {
