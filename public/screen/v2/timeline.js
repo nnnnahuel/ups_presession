@@ -1,0 +1,245 @@
+// Pure timing logic of /screen/v2: no DOM, no network, no audio.
+// app.js feeds it the clock and the class schedule; tests/screen-v2.test.mjs checks it.
+
+export const SEC = 1000;
+export const MIN = 60 * SEC;
+export const HOUR = 60 * MIN;
+export const DAY = 24 * HOUR;
+export const CLASS_END = 55 * MIN;
+export const TZ = "America/Argentina/Buenos_Aires";
+
+// Voice cues, relative to the start of the class they belong to.
+export const CUES = [
+  { id: "count5", line: "count5", offset: -5 * SEC },
+  { id: "count4", line: "count4", offset: -4 * SEC },
+  { id: "count3", line: "count3", offset: -3 * SEC },
+  { id: "count2", line: "count2", offset: -2 * SEC },
+  { id: "count1", line: "count1", offset: -1 * SEC },
+  { id: "start", line: "start", offset: 0 },
+  { id: "minute20", line: "minute20", offset: 20 * MIN },
+  { id: "minute45", line: "minute45", offset: 45 * MIN },
+  { id: "end", line: "end", offset: CLASS_END },
+];
+
+// ===== Argentina wall clock =====
+const tzFormat = new Intl.DateTimeFormat("en-US", {
+  timeZone: TZ,
+  hourCycle: "h23",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "numeric",
+  minute: "numeric",
+  second: "numeric",
+});
+let tzCache = { minute: Number.NaN, offset: 0 };
+
+export function tzOffset(epoch) {
+  const minute = Math.floor(epoch / MIN);
+  if (minute === tzCache.minute) return tzCache.offset;
+  const parts = {};
+  for (const part of tzFormat.formatToParts(new Date(epoch))) parts[part.type] = part.value;
+  const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+  tzCache = { minute, offset: Math.round((asUtc - epoch) / MIN) * MIN };
+  return tzCache.offset;
+}
+
+export function wallTime(epoch) {
+  const date = new Date(epoch + tzOffset(epoch));
+  return { h: date.getUTCHours(), m: date.getUTCMinutes(), s: date.getUTCSeconds() };
+}
+
+export function hourStartOf(epoch) {
+  const offset = tzOffset(epoch);
+  return Math.floor((epoch + offset) / HOUR) * HOUR - offset;
+}
+
+export function hourStartOfIso(value) {
+  const epoch = Date.parse(value);
+  return Number.isFinite(epoch) ? hourStartOf(epoch) : Number.NaN;
+}
+
+// Epoch of a wall-clock time (ms since local midnight) on the same Argentina day as `reference`.
+export function sameDayAt(reference, msIntoDay) {
+  const offset = tzOffset(reference);
+  return Math.floor((reference + offset) / DAY) * DAY + msIntoDay - offset;
+}
+
+export const pad = (n) => String(n).padStart(2, "0");
+export const mmss = (seconds) => `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
+export function hhmm(epoch) {
+  const t = wallTime(epoch);
+  return `${pad(t.h)}:${pad(t.m)}`;
+}
+
+// ===== Which hours have a class =====
+// The portal reports `current` only until :55, so the screen remembers the
+// hours it saw with a class to know at :55-:59 that one just ended.
+export function createClassMemory(initial = []) {
+  const hours = new Set(initial.filter(Number.isFinite));
+  return {
+    has: (classStart) => hours.has(classStart),
+    list: () => [...hours],
+    absorb(data, now) {
+      for (const slot of [data.current, data.lobby]) {
+        const start = slot ? hourStartOfIso(slot.starts_at) : Number.NaN;
+        if (Number.isFinite(start)) hours.add(start);
+      }
+      // Inside its lobby window the portal is authoritative: a class it no longer lists was cancelled.
+      const lobbyStart = data.lobby ? hourStartOfIso(data.lobby.starts_at) : Number.NaN;
+      for (const start of [...hours]) {
+        if (start < now - 3 * HOUR) hours.delete(start);
+        else if (start > now - 9 * MIN && start <= now + 14 * MIN && start !== lobbyStart) hours.delete(start);
+      }
+    },
+  };
+}
+
+// ===== What the screen shows =====
+function namesFor(schedule, classStart, now) {
+  const lobby = schedule.lobbyFor(classStart, now);
+  if (!lobby || !Array.isArray(lobby.athletes) || lobby.athletes.length === 0) return null;
+  const seen = new Set();
+  const athletes = lobby.athletes.map((athlete, index) => {
+    let id = String(athlete.id || `athlete-${index}`);
+    if (seen.has(id)) id = `${id}-${index}`;
+    seen.add(id);
+    return { id, name: String(athlete.name || ""), lit: Boolean(athlete.checked_in_at) };
+  });
+  return {
+    classStart,
+    coach: lobby.coach || null,
+    lit: athletes.filter((a) => a.lit).length,
+    total: athletes.length,
+    athletes,
+  };
+}
+
+// schedule: { hasClassAt(classStart), lobbyFor(classStart, now) }
+export function computeView(now, schedule, options) {
+  const { namesFromMinute, namesUntilMinute, finalCountSeconds } = options;
+  const hour = hourStartOf(now);
+  const next = hour + HOUR;
+  const elapsed = Math.floor((now - hour) / SEC);
+  const minute = Math.floor(elapsed / 60);
+  const classNow = schedule.hasClassAt(hour);
+  const classNext = schedule.hasClassAt(next);
+  const clock = hhmm(now);
+  const view = {
+    mode: "idle",
+    stage: null,
+    clock,
+    num: clock,
+    inverted: false,
+    last: false,
+    final: false,
+    fill: null,
+    step: -1,
+    names: null,
+    nextClassStart: classNext ? next : null,
+  };
+  const classSeconds = CLASS_END / SEC;
+
+  if (elapsed < classSeconds) {
+    if (classNow) {
+      const step = minute < 20 ? 0 : minute < 45 ? 1 : 2;
+      Object.assign(view, {
+        mode: "class",
+        stage: ["warmup", "series", "last"][step],
+        num: mmss(classSeconds - elapsed),
+        last: step === 2,
+        fill: elapsed / classSeconds,
+        step,
+      });
+      if (minute < namesUntilMinute) view.names = namesFor(schedule, hour, now);
+    }
+    return view;
+  }
+
+  const remaining = 3600 - elapsed;
+  const lobbyTime = classNext && minute >= namesFromMinute;
+  if (classNow) {
+    Object.assign(view, { mode: "done", stage: "done", num: mmss(remaining), inverted: true, fill: 1, step: 3 });
+  } else if (lobbyTime) {
+    Object.assign(view, { mode: "lobby", stage: "lobby", num: mmss(remaining) });
+  }
+  if (view.mode !== "idle" && classNext && remaining <= finalCountSeconds) {
+    view.final = true;
+    view.num = String(remaining);
+  }
+  if (view.mode !== "idle" && lobbyTime) view.names = namesFor(schedule, next, now);
+  return view;
+}
+
+// ===== Voice =====
+// Cues that should be handed to Web Audio now (within the lookahead, not too late).
+export function dueCues(now, schedule, { hasLine, lookaheadMs, lateMs, rate = 1 }) {
+  const hour = hourStartOf(now);
+  const due = [];
+  for (const classStart of [hour, hour + HOUR]) {
+    for (const cue of CUES) {
+      const at = classStart + cue.offset;
+      const dueInRealMs = (at - now) / rate;
+      if (dueInRealMs > lookaheadMs || dueInRealMs < -lateMs) continue;
+      if (!hasLine(cue.line) || !schedule.hasClassAt(classStart)) continue;
+      due.push({ key: `${cue.id}@${at}`, cue, at, classStart });
+    }
+  }
+  return due;
+}
+
+// ===== Studio music =====
+// Low from «Sesión completa» until `restoreMinute` of the next class, and around every phrase.
+// lineDurationMs(line) returns the phrase length, or null when it will not play.
+export function musicShouldBeLow(now, schedule, { lineDurationMs, leadMs, tailMs, restoreMinute }) {
+  const hour = hourStartOf(now);
+  for (const classStart of [hour - HOUR, hour, hour + HOUR]) {
+    if (!schedule.hasClassAt(classStart)) continue;
+    const holdFrom = classStart + CLASS_END - leadMs;
+    const holdUntil = classStart + HOUR + restoreMinute * MIN;
+    if (now >= holdFrom && now < holdUntil) return true;
+    for (const cue of CUES) {
+      const duration = lineDurationMs(cue.line);
+      if (duration === null) continue;
+      const at = classStart + cue.offset;
+      if (now >= at - leadMs && now < at + duration + tailMs) return true;
+    }
+  }
+  return false;
+}
+
+// ===== Demo data (?demo=1) =====
+export const DEMO_ROSTER = [
+  { id: "demo-agustina", name: "Agustina", firstSession: true, scan: -150 },
+  { id: "demo-marta", name: "Marta", scan: -170 },
+  { id: "demo-luna", name: "Luna", scan: -125 },
+  { id: "demo-tomas", name: "Tomás", scan: -55 },
+  { id: "demo-belen", name: "Belén", scan: 95 },
+  { id: "demo-facundo", name: "Facundo", scan: null },
+];
+
+// Same order the portal sends: first sessions, then by scan time, then not scanned.
+export function sortLikePortal(athletes) {
+  const rank = (a, index) => [
+    a.first_session ? 0 : 1,
+    a.checked_in_at ? 0 : 1,
+    a.checked_in_at ? Date.parse(a.checked_in_at) : index,
+  ];
+  return athletes
+    .map((athlete, index) => ({ athlete, key: rank(athlete, index) }))
+    .sort((x, y) => x.key[0] - y.key[0] || x.key[1] - y.key[1] || x.key[2] - y.key[2])
+    .map(({ athlete }) => athlete);
+}
+
+export function demoLobby(classStart, now, roster = DEMO_ROSTER) {
+  const athletes = roster.map((a) => {
+    const scannedAt = a.scan === null ? null : classStart + a.scan * SEC;
+    return {
+      id: a.id,
+      name: a.name,
+      first_session: Boolean(a.firstSession),
+      checked_in_at: scannedAt !== null && now >= scannedAt ? new Date(scannedAt).toISOString() : null,
+    };
+  });
+  return { starts_at: new Date(classStart).toISOString(), coach: "Joaquín", athletes: sortLikePortal(athletes) };
+}

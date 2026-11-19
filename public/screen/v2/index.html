@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UP.S · Pantalla</title>
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="preload" href="/screen/v2/UPSNumeral-Bold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/screen/v2/style.css">
+</head>
+<body class="mode-idle no-bar booting">
+  <div class="stage" id="stage">
+    <div class="frame">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <img class="logo" id="logo" src="/screen/logo.png" alt="UP.S">
+
+      <button class="gate" id="gate" type="button" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/></svg>
+        <span class="gate-title" id="gateTitle"></span>
+        <span class="gate-hint" id="gateHint"></span>
+      </button>
+
+      <header class="top">
+        <span class="place" id="place"></span>
+        <span class="clock" id="clock"></span>
+      </header>
+
+      <main class="mid">
+        <div class="phase" id="phase"></div>
+        <div class="num" id="num"></div>
+        <div class="sub" id="sub"></div>
+      </main>
+
+      <section class="lobby" id="lobby">
+        <div class="lobby-head">
+          <span class="lobby-title" id="lobbyTitle"></span>
+          <span class="lobby-count" id="lobbyCount"></span>
+        </div>
+        <ol class="names" id="names"></ol>
+      </section>
+
+      <footer class="progress">
+        <div class="bar"><i id="fill"></i><b style="left:36.3636%"></b><b style="left:81.8182%"></b></div>
+        <div class="legend" id="legend">
+          <span data-step="0" style="left:0"></span>
+          <span data-step="1" style="left:36.3636%" class="mid-mark"></span>
+          <span data-step="2" style="left:81.8182%" class="mid-mark"></span>
+          <span data-step="3" style="right:0"></span>
+        </div>
+      </footer>
+
+      <div class="status">
+        <span class="test-tag" id="testTag"></span>
+        <span class="sound" id="sound"></span>
+      </div>
+    </div>
+    <div class="flash" id="flash"></div>
+  </div>
+  <script type="module" src="/screen/v2/app.js"></script>
+</body>
+</html>

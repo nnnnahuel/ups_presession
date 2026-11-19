@@ -89,6 +89,55 @@ The Windows worker that applies system-volume commands connects to
 targeting another deployment. The worker also requires `DEVICE_ID`,
 `LOCATION_ID`, and the matching `WORKER_TOKEN`.
 
+## Pantalla del estudio v2 (`/screen/v2`)
+
+Pantalla nueva con cuenta regresiva, voz y lobby de nombres. Vive aparte de
+`/screen`, que sigue igual.
+
+### Abrir Chrome en la notebook para que la voz suene sola
+
+Chrome no deja sonar audio hasta que alguien toca la página. Para que la
+pantalla hable sin que nadie la toque, abrí Chrome con este acceso directo
+(un perfil propio hace que la opción se aplique aunque haya otro Chrome abierto):
+
+```bat
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk --autoplay-policy=no-user-gesture-required --user-data-dir="%LOCALAPPDATA%\UPS-Pantalla" "https://sesiones.up-s.ar/screen/v2?studio=A"
+```
+
+- `--kiosk` la abre a pantalla completa; para salir, `Alt+F4`.
+- Para el Estudio B, terminá la dirección en `?studio=B`.
+- Si igual aparece «Activar sonido», un toque, un clic o cualquier tecla lo
+  resuelve. Con el sonido activo queda un parlante chico abajo a la derecha.
+- Para ver desde afuera si la pantalla está abierta y con sonido:
+  `GET /screen/api/health` → campo `screenDisplays` (`online`, `audioUnlocked`,
+  `voiceReady`, `lastCue`, `lastCueAt`). La pantalla avisa cada 30 segundos.
+
+### Modo de prueba
+
+`/screen/v2?demo=1&now=20:57:00&speed=10&mute=1`
+
+- `now=HH:MM:SS` arranca un reloj simulado a esa hora; `speed=N` lo acelera.
+- `demo=1` usa 6 nombres falsos que se van encendiendo; `demo=first` simula la
+  primera clase del bloque (sin clase anterior) y `demo=idle`, un día sin clases.
+- `mute=1` calla la voz.
+- Con `now`, `speed` o `demo` la pantalla nunca toca el volumen ni manda el
+  latido. **Sin esos parámetros actúa sobre el estudio de verdad** (baja la
+  música por los mismos endpoints que `/screen`).
+
+### Servidor
+
+- `GET /screen/api/lobby?studio=A|B` pide al portal
+  `${UPS_PORTAL_API_BASE_URL}/api/studio-screen/lobby/?studio=A` con
+  `Authorization: Bearer ${STUDIO_SCREEN_API_TOKEN}` y guarda la respuesta
+  4 segundos. Sin esas variables o si el portal falla devuelve `{"ok": false}` y
+  la pantalla sigue por reloj como si hubiera clase todas las horas.
+- `POST /screen/tts` solo acepta las frases fijas: las de
+  `public/screen/script.js` y las de `public/screen/v2/voice-lines.js`. Otro
+  texto → 400. El audio queda guardado en la tabla `screen_tts_audio`, así que
+  cada frase se paga a ElevenLabs una sola vez.
+- Las frases de la voz se retocan en `public/screen/v2/voice-lines.js`; los
+  textos de pantalla y los tiempos, arriba de `public/screen/v2/app.js`.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
