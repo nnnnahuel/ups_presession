@@ -159,9 +159,7 @@ Endpoints:
   texto → 400. El audio queda guardado en la tabla `screen_tts_audio`, así que
   cada frase se paga a ElevenLabs una sola vez.
 - Las frases de la voz se retocan en `public/screen/v2/voice-lines.js`; los
-  textos de pantalla y los tiempos, arriba de `public/screen/v2/app.js`. Los
-  cortes de la barra de abajo (4 ejercicios y el extra) son `EXERCISE_CUTS`,
-  en minutos de la clase.
+  textos de pantalla y los tiempos, arriba de `public/screen/v2/app.js`.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

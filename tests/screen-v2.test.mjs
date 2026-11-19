@@ -10,11 +10,10 @@ import {
   hourStartOf,
   musicShouldBeLow,
   sameDayAt,
-  segmentAt,
 } from "../public/screen/v2/timeline.js";
 
 const at = (time, day = "2026-11-18") => Date.parse(`${day}T${time.length === 5 ? `${time}:00` : time}-03:00`);
-const OPTIONS = { namesFromMinute: 57, namesUntilMinute: 5, finalCountSeconds: 10, exerciseCuts: [15, 25, 35, 45] };
+const OPTIONS = { namesFromMinute: 57, namesUntilMinute: 5, finalCountSeconds: 10 };
 
 function scheduleWith(classHours, { lobby = false } = {}) {
   const starts = new Set(classHours.map((time) => at(time)));
@@ -27,36 +26,22 @@ function scheduleWith(classHours, { lobby = false } = {}) {
 const everyHour = { hasClassAt: () => true, lobbyFor: () => null };
 const view = (time, schedule) => computeView(at(time), schedule, OPTIONS);
 
-test("the class is four exercises and an extra, with «Quedan 10 minutos» from :45", () => {
+test("minutes 0-44 show only the countdown, «Últimos 10 minutos» from :45, the bar fills to :55", () => {
   const schedule = scheduleWith(["20:00", "21:00"], { lobby: true });
   assert.deepEqual(
-    ["20:08", "20:20", "20:30", "20:40", "20:48"].map((time) => {
+    ["20:08", "20:30", "20:48"].map((time) => {
       const v = view(time, schedule);
-      return [v.mode, v.stage, v.num, v.last, v.inverted, v.step];
+      return [v.mode, v.stage, v.num, v.last, v.inverted];
     }),
     [
-      ["class", "work", "47:00", false, false, 0],
-      ["class", "work", "35:00", false, false, 1],
-      ["class", "work", "25:00", false, false, 2],
-      ["class", "work", "15:00", false, false, 3],
-      ["class", "last", "07:00", true, false, 4],
+      ["class", "work", "47:00", false, false],
+      ["class", "work", "25:00", false, false],
+      ["class", "last", "07:00", true, false],
     ]
   );
-  assert.deepEqual(
-    ["20:14:59", "20:15", "20:24:59", "20:25", "20:35", "20:44:59", "20:45", "20:54:59"].map((time) => view(time, schedule).step),
-    [0, 1, 1, 2, 3, 3, 4, 4]
-  );
   assert.deepEqual([view("20:44:59", schedule).stage, view("20:45", schedule).stage], ["work", "last"]);
+  assert.deepEqual([view("20:00", schedule).fill, view("20:27:30", schedule).fill], [0, 0.5]);
   assert.equal(view("20:54:59", schedule).num, "00:01");
-  assert.equal(view("20:55", schedule).step, -1, "«Sesión completa» highlights no segment");
-});
-
-test("the exercise cuts are a single setting", () => {
-  const custom = { ...OPTIONS, exerciseCuts: [12, 24, 36, 45] };
-  const step = (time) => computeView(at(time), everyHour, custom).step;
-  assert.deepEqual(["20:11:59", "20:12", "20:30", "20:36", "20:50"].map(step), [0, 1, 2, 3, 4]);
-  assert.equal(computeView(at("20:44"), everyHour, custom).stage, "work", "«Quedan 10 minutos» stays at :45");
-  assert.deepEqual([segmentAt(0, [15, 25, 35, 45]), segmentAt(54, [15, 25, 35, 45])], [0, 4]);
 });
 
 test("voice lines: no minute 20, «Quedan diez minutos» at :45, every cue has its line", () => {

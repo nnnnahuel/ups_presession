@@ -126,16 +126,9 @@ function namesFor(schedule, classStart, now) {
   };
 }
 
-// Index of the exercise segment `minute` falls in: cuts [15, 25, 35, 45] give 0..3 for the
-// four exercises and 4 for the extra (45 to the end of the class).
-export function segmentAt(minute, exerciseCuts) {
-  const index = exerciseCuts.findIndex((cut) => minute < cut);
-  return index === -1 ? exerciseCuts.length : index;
-}
-
 // schedule: { hasClassAt(classStart), lobbyFor(classStart, now) }
 export function computeView(now, schedule, options) {
-  const { namesFromMinute, namesUntilMinute, finalCountSeconds, exerciseCuts } = options;
+  const { namesFromMinute, namesUntilMinute, finalCountSeconds } = options;
   const hour = hourStartOf(now);
   const next = hour + HOUR;
   const elapsed = Math.floor((now - hour) / SEC);
@@ -152,7 +145,6 @@ export function computeView(now, schedule, options) {
     last: false,
     final: false,
     fill: null,
-    step: -1,
     names: null,
     nextClassStart: classNext ? next : null,
   };
@@ -167,7 +159,6 @@ export function computeView(now, schedule, options) {
         num: mmss(classSeconds - elapsed),
         last,
         fill: elapsed / classSeconds,
-        step: segmentAt(minute, exerciseCuts),
       });
       if (minute < namesUntilMinute) view.names = namesFor(schedule, hour, now);
     }

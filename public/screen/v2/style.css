@@ -332,32 +332,18 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
   from { opacity: 0; transform: translateY(1.2cqw); }
 }
 
-/* ===== Progress: one segment per exercise plus the extra ===== */
+/* ===== Progress: one continuous line from minute 0 to 55 ===== */
 .progress { transition: opacity 0.5s ease; }
 body.no-bar .progress { opacity: 0; }
 
-.bar,
-.legend {
-  display: flex;
-  gap: 0.42cqw;
-}
-
 .bar {
-  align-items: center;
-  height: 0.52cqw;
-}
-
-/* Past segments full, the current one thicker, the ones still ahead dim. */
-.seg {
   position: relative;
-  flex: 1 1 0;
   height: 0.26cqw;
   background: var(--line);
-  transition: height 0.5s var(--ease), background-color var(--theme) ease;
+  transition: background-color var(--theme) ease;
 }
-.seg.on { height: 0.52cqw; }
 
-.seg i {
+.bar i {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -366,23 +352,6 @@ body.no-bar .progress { opacity: 0; }
   background: var(--num);
   transition: width 0.9s linear, background-color var(--theme) ease;
 }
-
-.legend {
-  height: 1.5cqw;
-  margin-top: 0.9cqw;
-  font-size: 0.95cqw;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.legend span {
-  flex: 1 1 0;
-  min-width: 0;
-  white-space: nowrap;
-  transition: color 0.5s ease;
-}
-.legend span.on { color: var(--fg); font-weight: 600; }
 
 /* ===== Sound gate and status ===== */
 .gate {
