@@ -22,7 +22,7 @@ const TEXT = {
   place: { A: "Estudio A", B: "Estudio B" },
   stages: {
     work: { phase: "", sub: "" }, // minutos 0 a 44: solo la cuenta
-    last: { phase: "Quedan 10 minutos", sub: "" },
+    last: { phase: "Últimos 10 minutos", sub: "" },
     done: { phase: "Sesión completa", sub: "Guardá tus elementos y liberá tu lugar" },
     lobby: { phase: (hour) => (hour === 1 ? "Turno de la 1" : `Turno de las ${hour}`), sub: "Escaneá tu QR al entrar" },
   },
@@ -325,7 +325,7 @@ let namesClearTimer = 0;
 function createSlot() {
   const li = document.createElement("li");
   li.className = "athlete";
-  li.innerHTML = '<span class="tag"></span><span class="sn"></span><span class="name"></span><i class="rule"></i>';
+  li.innerHTML = '<span class="tag"></span><span class="sn"></span><span class="name"></span>';
   return li;
 }
 
@@ -383,7 +383,7 @@ function renderNames(names) {
     fillSlot(li, athlete);
     const wasLit = li.classList.contains("lit");
     li.classList.toggle("lit", athlete.lit);
-    if (athlete.lit && !wasLit && !appearing) retrigger(li, "ignite", 1100);
+    if (athlete.lit && !wasLit && !appearing) retrigger(li, "ignite", 1000);
     el.names.appendChild(li);
     wanted.add(athlete.id);
   });
@@ -421,20 +421,25 @@ function renderNames(names) {
   fitNames();
 }
 
-// Long names (and the «Primera sesión» label) shrink to fit their card: always one line, never cut.
-// The scale is a transform, so the measured width is always the natural one.
+// Names are always one line and never cut. Every name in the row shares one size: the largest at
+// which the longest name fits its column, capped at the normal size. The «Primera sesión» label
+// shrinks on its own (a transform, so its measured width is always the natural one).
 function fitText(node, available) {
   const natural = node.scrollWidth;
   node.style.setProperty("--fit", natural > available && natural > 0 ? String(available / natural) : "1");
 }
 
 function fitNames() {
+  el.names.style.setProperty("--name-fit", "1");
+  let fit = 1;
   for (const li of slots.values()) {
     const available = li.clientWidth;
     if (!available) continue;
-    fitText(li.querySelector(".name"), available);
+    const natural = li.querySelector(".name").scrollWidth;
+    if (natural > available) fit = Math.min(fit, available / natural);
     fitText(li.querySelector(".tag"), available);
   }
+  el.names.style.setProperty("--name-fit", String(Math.floor(fit * 1000) / 1000));
 }
 
 window.addEventListener("resize", () => requestAnimationFrame(fitNames));

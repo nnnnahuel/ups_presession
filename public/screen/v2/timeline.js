@@ -177,7 +177,8 @@ export function computeView(now, schedule, options) {
   const remaining = 3600 - elapsed;
   const lobbyTime = classNext && minute >= namesFromMinute;
   if (classNow) {
-    Object.assign(view, { mode: "done", stage: "done", num: mmss(remaining), inverted: true, fill: 1 });
+    // The class is over: no exercise bar until the next one starts at :00.
+    Object.assign(view, { mode: "done", stage: "done", num: mmss(remaining), inverted: true });
   } else if (lobbyTime) {
     Object.assign(view, { mode: "lobby", stage: "lobby", num: mmss(remaining) });
   }

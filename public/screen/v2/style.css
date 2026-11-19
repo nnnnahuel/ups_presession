@@ -214,13 +214,13 @@ body.go .mid { animation: go 0.65s var(--ease); }
 }
 
 body.has-lobby .lobby {
-  height: 14cqw;
-  margin-bottom: 3.2cqw; /* keeps the cards' rules apart from the segmented bar */
+  height: 13.4cqw;
+  margin-bottom: 2.6cqw;
   opacity: 1;
 }
 
 /* Only names (older bridge): a shorter strip, so the title stays next to them. */
-body.has-lobby .lobby.compact { height: 7.6cqw; }
+body.has-lobby .lobby.compact { height: 7.4cqw; }
 
 .lobby-head {
   flex: none;
@@ -237,6 +237,7 @@ body.has-lobby .lobby.compact { height: 7.6cqw; }
   --digits: 2;
   flex: 1;
   min-height: 0;
+  margin-top: 2cqw;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 15.6cqw);
@@ -251,18 +252,19 @@ body.has-lobby .lobby.compact { height: 7.6cqw; }
   container-type: inline-size;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  align-items: flex-start;
+  align-items: flex-start; /* top-aligned: the gap under the title stays the same whatever the name size */
   min-width: 0;
   opacity: 0.38;
   transition: opacity 0.3s ease, transform 0.7s var(--ease);
 }
 
+/* A #04afdd number means a special day: a first session or a milestone. */
+.athlete.first,
 .athlete.milestone { --ink: var(--accent); }
 .athlete.lit { opacity: 1; }
 
-/* Text that does not fit is scaled (--fit, set by app.js) around its baseline, so every card
-   in the row keeps the same baseline. Inter: ascender 0.969em, descender 0.242em. */
+/* A label that does not fit is scaled (--fit, set by app.js) around its baseline.
+   Inter: ascender 0.969em, descender 0.242em. */
 .athlete .tag {
   font-size: calc(var(--u) * 0.7);
   font-weight: 600;
@@ -293,56 +295,30 @@ body.has-lobby .lobby.compact { height: 7.6cqw; }
 }
 .athlete.lit .sn { color: var(--ink); }
 
+/* One size for every name in the row (--name-fit on .names, set by app.js): the largest at
+   which the longest name fits its column, never above the normal size. */
 .athlete .name {
   margin-top: calc(var(--u) * 0.7);
-  font-size: calc(var(--u) * 2.1);
+  font-size: calc(var(--u) * 2.1 * var(--name-fit, 1));
   font-weight: 800;
   letter-spacing: 0.01em;
   line-height: 1.1;
   text-transform: uppercase;
   white-space: nowrap;
-  transform: scale(var(--fit, 1));
-  transform-origin: 0 0.9135em;
 }
 
 /* Older bridge without session numbers: just the name, larger. */
 .athlete.no-number .tag,
 .athlete.no-number .sn { display: none; }
-.athlete.no-number .name { font-size: calc(var(--u) * 3); }
+.athlete.no-number .name { font-size: calc(var(--u) * 3 * var(--name-fit, 1)); }
 
-/* Base rule: 1 px while waiting, 3 px once scanned. */
-.athlete .rule {
-  position: relative;
-  align-self: stretch;
-  height: 3px;
-  margin-top: calc(var(--u) * 0.8);
-}
-.athlete .rule::before,
-.athlete .rule::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--fg);
-}
-.athlete .rule::before { height: 1px; }
-.athlete .rule::after {
-  height: 3px;
-  transform: scaleX(0);
-  transform-origin: left center;
-}
-.athlete.lit .rule::after { transform: none; }
+/* The scan moment, once: the number fills in #04afdd with a slight pulse and settles in its
+   own colour (it stays #04afdd for a first session or a milestone). */
+.athlete.ignite .sn { animation: pop 0.3s var(--ease), lit-fill 0.8s ease-out; }
 
-/* The scan moment, once: the rule sweeps in accent and settles in the foreground colour,
-   the number fills with a slight pulse. */
-.athlete.ignite .rule::after { animation: sweep 0.95s var(--ease) both; }
-.athlete.ignite .sn { animation: pop 0.3s var(--ease); }
-
-@keyframes sweep {
-  0% { transform: scaleX(0); background: var(--accent); }
-  52% { transform: none; background: var(--accent); }
-  100% { transform: none; background: var(--fg); }
+@keyframes lit-fill {
+  0%, 25% { color: var(--accent); -webkit-text-stroke-color: var(--accent); }
+  100% { color: var(--ink); -webkit-text-stroke-color: var(--ink); }
 }
 
 @keyframes pop {

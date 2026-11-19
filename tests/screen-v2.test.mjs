@@ -72,7 +72,9 @@ test("voice lines: no minute 20, «Quedan diez minutos» at :45, every cue has i
 test("changeover inverts at :55, shows the incoming names at :57 and counts 10 to 1", () => {
   const schedule = scheduleWith(["20:00", "21:00"], { lobby: true });
   const done = view("20:55", schedule);
-  assert.deepEqual([done.mode, done.inverted, done.num, done.fill, done.names], ["done", true, "05:00", 1, null]);
+  assert.deepEqual([done.mode, done.inverted, done.num, done.fill, done.names], ["done", true, "05:00", null, null]);
+  assert.equal(view("20:59:52", schedule).fill, null, "no exercise bar during «Sesión completa», 10 count included");
+  assert.notEqual(view("21:00", schedule).fill, null, "the bar is back with the new class");
 
   const lobby = view("20:57", schedule);
   assert.equal(lobby.mode, "done");
