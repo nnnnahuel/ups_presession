@@ -126,6 +126,9 @@ pantalla hable sin que nadie la toque, abrí Chrome con este acceso directo
   `demo=first` simula la primera clase del bloque (sin clase anterior) y
   `demo=idle`, un día sin clases.
 - `mute=1` calla la voz.
+- `roster=grid` muestra los nombres en dos filas con letra más grande. Es una
+  variante para comparar con la fila de siempre: cuando se elija una, se borra
+  la otra. Anda también sin modo de prueba.
 - Con `now`, `speed` o `demo` la pantalla nunca toca el volumen ni manda el
   latido. **Sin esos parámetros actúa sobre el estudio de verdad** (baja la
   música por los mismos endpoints que `/screen`).
