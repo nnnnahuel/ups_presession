@@ -1,5 +1,6 @@
 import { VOICE_LINES } from "/screen/v2/voice-lines.js";
 import {
+  CLASS_END,
   DEMO_DEFAULT_COUNT,
   DEMO_ROSTER,
   MIN,
@@ -20,9 +21,8 @@ import {
 const TEXT = {
   place: { A: "Estudio A", B: "Estudio B" },
   stages: {
-    warmup: { phase: "Arranque", sub: "Primera serie antes del minuto 20" },
-    series: { phase: "A las series", sub: "Última serie al minuto 45" },
-    last: { phase: "Última serie", sub: "Cerrá lo que estás haciendo" },
+    work: { phase: "", sub: "" }, // minutos 0 a 44: solo la cuenta
+    last: { phase: "Quedan 10 minutos", sub: "" },
     done: { phase: "Sesión completa", sub: "Guardá tus elementos y liberá tu lugar" },
     lobby: { phase: (hour) => (hour === 1 ? "Turno de la 1" : `Turno de las ${hour}`), sub: "Escaneá tu QR al entrar" },
   },
@@ -30,7 +30,8 @@ const TEXT = {
   namesTitle: (time, coach) => (coach ? `Turno ${time} · Coach ${coach}` : `Turno ${time}`),
   sessionLabel: "Sesión",
   firstSessionLabel: "Primera sesión",
-  legend: ["Inicio", "Series", "Última serie", "Fin"],
+  // Barra: un tramo por ejercicio («1», «2», …) y el último es el extra.
+  segmentLabel: (index, count) => (index === count - 1 ? "Extra" : String(index + 1)),
   gate: { title: "Activar sonido", hint: "Tocá la pantalla o apretá cualquier tecla" },
   soundMuted: "Sin voz",
   soundUnavailable: "Voz no disponible",
@@ -39,6 +40,9 @@ const TEXT = {
 
 // ===== Ajustes =====
 const SETTINGS = {
+  // Cortes de la barra de abajo, en minutos de la clase: 4 ejercicios y el extra hasta el minuto 55.
+  // Solo guían el ritmo: no hay voz en los cortes.
+  EXERCISE_CUTS: [15, 25, 35, 45],
   RADIO_FILTER: true, // false = voz limpia, sin filtro de radio
   VOICE_GAIN: 1.15,
   // Las mismas llamadas que usa hoy /screen (public/screen/script.js).
@@ -188,6 +192,7 @@ const VIEW_OPTIONS = {
   namesFromMinute: SETTINGS.NAMES_FROM_MINUTE,
   namesUntilMinute: SETTINGS.NAMES_UNTIL_MINUTE,
   finalCountSeconds: SETTINGS.FINAL_COUNT_SECONDS,
+  exerciseCuts: SETTINGS.EXERCISE_CUTS,
 };
 
 // ===== Rendering =====
@@ -199,8 +204,8 @@ const el = {
   phase: $("phase"),
   num: $("num"),
   sub: $("sub"),
-  fill: $("fill"),
-  legend: [...$("legend").children],
+  bar: $("bar"),
+  legend: $("legend"),
   lobby: $("lobby"),
   lobbyTitle: $("lobbyTitle"),
   names: $("names"),
@@ -211,7 +216,38 @@ const el = {
 };
 
 el.place.textContent = TEXT.place[STUDIO];
-el.legend.forEach((span, index) => (span.textContent = TEXT.legend[index]));
+
+// Progress bar: one segment per exercise plus the extra, sized by its minutes.
+const CLASS_MINUTES = CLASS_END / MIN;
+const segmentBounds = [0, ...SETTINGS.EXERCISE_CUTS, CLASS_MINUTES];
+const segments = segmentBounds.slice(1).map((end, index) => {
+  const start = segmentBounds[index];
+  const track = document.createElement("div");
+  track.className = "seg";
+  track.style.flexGrow = String(end - start);
+  const fill = document.createElement("i");
+  track.appendChild(fill);
+  const label = document.createElement("span");
+  label.style.flexGrow = String(end - start);
+  label.textContent = TEXT.segmentLabel(index, segmentBounds.length - 1);
+  el.bar.appendChild(track);
+  el.legend.appendChild(label);
+  return { start, end, track, fill, label };
+});
+
+function renderBar(view) {
+  if (view.fill !== null) {
+    const minutes = view.fill * CLASS_MINUTES;
+    for (const seg of segments) {
+      const part = clamp((minutes - seg.start) / (seg.end - seg.start), 0, 1);
+      seg.fill.style.width = `${(part * 100).toFixed(3)}%`;
+    }
+  }
+  segments.forEach((seg, index) => {
+    seg.track.classList.toggle("on", index === view.step);
+    seg.label.classList.toggle("on", index === view.step);
+  });
+}
 $("gateTitle").textContent = TEXT.gate.title;
 $("gateHint").textContent = TEXT.gate.hint;
 if (TEST_MODE) {
@@ -256,6 +292,9 @@ function render(view) {
   for (const mode of ["idle", "class", "done", "lobby"]) body.classList.toggle(`mode-${mode}`, view.mode === mode);
 
   const texts = textsFor(view);
+  // Without a title or subtitle the countdown sits alone in the middle.
+  body.classList.toggle("no-phase", !texts.phase);
+  body.classList.toggle("no-sub", !texts.sub);
   setText(el.clock, view.clock);
   setText(el.phase, texts.phase);
   setText(el.sub, texts.sub);
@@ -264,8 +303,7 @@ function render(view) {
     if (view.final) retrigger(el.num, "tick");
     else el.num.classList.remove("tick");
   }
-  if (view.fill !== null) el.fill.style.width = `${(view.fill * 100).toFixed(3)}%`;
-  el.legend.forEach((span, index) => span.classList.toggle("on", index === view.step));
+  renderBar(view);
   renderNames(view.names);
 
   if (cut) {

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { VOICE_LINES } from "../public/screen/v2/voice-lines.js";
 import {
+  CUES,
   computeView,
   createClassMemory,
   demoLobby,
@@ -8,10 +10,11 @@ import {
   hourStartOf,
   musicShouldBeLow,
   sameDayAt,
+  segmentAt,
 } from "../public/screen/v2/timeline.js";
 
 const at = (time, day = "2026-11-18") => Date.parse(`${day}T${time.length === 5 ? `${time}:00` : time}-03:00`);
-const OPTIONS = { namesFromMinute: 57, namesUntilMinute: 5, finalCountSeconds: 10 };
+const OPTIONS = { namesFromMinute: 57, namesUntilMinute: 5, finalCountSeconds: 10, exerciseCuts: [15, 25, 35, 45] };
 
 function scheduleWith(classHours, { lobby = false } = {}) {
   const starts = new Set(classHours.map((time) => at(time)));
@@ -24,22 +27,46 @@ function scheduleWith(classHours, { lobby = false } = {}) {
 const everyHour = { hasClassAt: () => true, lobbyFor: () => null };
 const view = (time, schedule) => computeView(at(time), schedule, OPTIONS);
 
-test("class states follow the wall clock", () => {
+test("the class is four exercises and an extra, with «Quedan 10 minutos» from :45", () => {
   const schedule = scheduleWith(["20:00", "21:00"], { lobby: true });
   assert.deepEqual(
-    ["20:12", "20:20", "20:48"].map((time) => {
+    ["20:08", "20:20", "20:30", "20:40", "20:48"].map((time) => {
       const v = view(time, schedule);
       return [v.mode, v.stage, v.num, v.last, v.inverted, v.step];
     }),
     [
-      ["class", "warmup", "43:00", false, false, 0],
-      ["class", "series", "35:00", false, false, 1],
-      ["class", "last", "07:00", true, false, 2],
+      ["class", "work", "47:00", false, false, 0],
+      ["class", "work", "35:00", false, false, 1],
+      ["class", "work", "25:00", false, false, 2],
+      ["class", "work", "15:00", false, false, 3],
+      ["class", "last", "07:00", true, false, 4],
     ]
   );
-  assert.equal(view("20:19:59", schedule).stage, "warmup");
-  assert.equal(view("20:44:59", schedule).stage, "series");
+  assert.deepEqual(
+    ["20:14:59", "20:15", "20:24:59", "20:25", "20:35", "20:44:59", "20:45", "20:54:59"].map((time) => view(time, schedule).step),
+    [0, 1, 1, 2, 3, 3, 4, 4]
+  );
+  assert.deepEqual([view("20:44:59", schedule).stage, view("20:45", schedule).stage], ["work", "last"]);
   assert.equal(view("20:54:59", schedule).num, "00:01");
+  assert.equal(view("20:55", schedule).step, -1, "«Sesión completa» highlights no segment");
+});
+
+test("the exercise cuts are a single setting", () => {
+  const custom = { ...OPTIONS, exerciseCuts: [12, 24, 36, 45] };
+  const step = (time) => computeView(at(time), everyHour, custom).step;
+  assert.deepEqual(["20:11:59", "20:12", "20:30", "20:36", "20:50"].map(step), [0, 1, 2, 3, 4]);
+  assert.equal(computeView(at("20:44"), everyHour, custom).stage, "work", "«Quedan 10 minutos» stays at :45");
+  assert.deepEqual([segmentAt(0, [15, 25, 35, 45]), segmentAt(54, [15, 25, 35, 45])], [0, 4]);
+});
+
+test("voice lines: no minute 20, «Quedan diez minutos» at :45, every cue has its line", () => {
+  assert.equal(VOICE_LINES.minute20, undefined);
+  assert.equal(VOICE_LINES.minute45, "Quedan diez minutos");
+  assert.deepEqual(
+    CUES.map((cue) => cue.id),
+    ["count5", "count4", "count3", "count2", "count1", "start", "minute45", "end"]
+  );
+  for (const cue of CUES) assert.equal(typeof VOICE_LINES[cue.line], "string", cue.line);
 });
 
 test("changeover inverts at :55, shows the incoming names at :57 and counts 10 to 1", () => {
@@ -61,7 +88,7 @@ test("changeover inverts at :55, shows the incoming names at :57 and counts 10 t
 test(":00 starts the new class and the names stay until minute 5", () => {
   const schedule = scheduleWith(["20:00", "21:00"], { lobby: true });
   const start = view("21:00", schedule);
-  assert.deepEqual([start.mode, start.stage, start.inverted, start.num], ["class", "warmup", false, "55:00"]);
+  assert.deepEqual([start.mode, start.stage, start.inverted, start.num], ["class", "work", false, "55:00"]);
   assert.equal(start.names.total, 6);
   assert.equal(view("21:00:39", schedule).names.lit, 4);
   assert.equal(view("21:00:40", schedule).names.lit, 5);
@@ -104,11 +131,13 @@ test("voice cues are due only for hours with a class", () => {
   const ids = (time, schedule) => dueCues(at(time), schedule, options).map((cue) => cue.cue.id);
 
   assert.deepEqual(ids("20:59:40", everyHour), ["count5", "count4", "count3", "count2", "count1", "start"]);
-  assert.deepEqual(ids("20:19:50", everyHour), ["minute20"]);
   assert.deepEqual(ids("20:44:41", everyHour), ["minute45"]);
   assert.deepEqual(ids("20:54:50", everyHour), ["end"]);
-  assert.deepEqual(ids("20:20:00.200", everyHour), ["minute20"]);
-  assert.deepEqual(ids("20:20:01", everyHour), []);
+  assert.deepEqual(ids("20:45:00.200", everyHour), ["minute45"]);
+  assert.deepEqual(ids("20:45:01", everyHour), []);
+  for (const time of ["20:14:50", "20:19:50", "20:24:50", "20:34:50"]) {
+    assert.deepEqual(ids(time, everyHour), [], `no voice before ${time.slice(0, 5)}`);
+  }
 
   assert.deepEqual(ids("20:54:50", scheduleWith(["21:00"])), [], "no «Sesión completa» without a class");
   assert.deepEqual(ids("20:59:45", scheduleWith(["20:00"])), [], "no countdown without an incoming class");
@@ -131,9 +160,10 @@ test("music goes low for «Sesión completa» until :02 and around each phrase",
   assert.equal(low("21:02:00", everyHour), false);
   assert.equal(low("20:19:57", everyHour), false, "no voice, no duck");
 
-  assert.equal(low("20:19:57", everyHour, 2000), true);
-  assert.equal(low("20:20:02.700", everyHour, 2000), true);
-  assert.equal(low("20:20:03", everyHour, 2000), false);
+  assert.equal(low("20:19:57", everyHour, 2000), false, "no phrase at minute 20 any more");
+  assert.equal(low("20:44:57", everyHour, 2000), true);
+  assert.equal(low("20:45:02.700", everyHour, 2000), true);
+  assert.equal(low("20:45:03", everyHour, 2000), false);
 
   const first = scheduleWith(["21:00"]);
   assert.equal(low("20:55:30", first, 1500), false, "no hold without a class that ends");

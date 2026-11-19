@@ -11,7 +11,6 @@ export const VOICE_LINES = {
   count2: "Dos",
   count1: "Uno",
   start: "Comienza la sesión",
-  minute20: "Minuto veinte. Todos en su primera serie",
-  minute45: "Quedan diez minutos. Última serie",
+  minute45: "Quedan diez minutos",
   end: "Sesión completa. Cinco minutos para liberar la sala",
 };

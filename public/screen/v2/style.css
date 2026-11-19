@@ -34,7 +34,9 @@ body.inv {
 body.last { --num: var(--accent); }
 body.has-lobby { --num-size: 16.5cqw; }
 body.final { --num-size: 26cqw; }
-body.final.has-lobby { --num-size: 18cqw; }
+body.final.has-lobby { --num-size: 17.5cqw; }
+/* Minutes 0-4 with names: no title or subtitle, so the countdown can be bigger. */
+body.has-lobby.no-phase.no-sub { --num-size: 19cqw; }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -143,14 +145,16 @@ body.mode-idle .clock { opacity: 0; }
 }
 
 .phase {
-  min-height: 1.25em;
+  height: 1.25em;
   font-size: 1.75cqw;
   font-weight: 600;
   letter-spacing: 0.5em;
   margin-right: -0.5em;
   text-transform: uppercase;
   white-space: nowrap;
+  transition: height 0.6s var(--ease), opacity 0.45s ease;
 }
+body.no-phase .phase { height: 0; opacity: 0; }
 
 .num {
   font-family: "UP.S Numeral", ui-monospace, monospace;
@@ -161,8 +165,9 @@ body.mode-idle .clock { opacity: 0; }
   color: var(--num);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  transition: color var(--theme) ease, font-size 0.7s var(--ease);
+  transition: color var(--theme) ease, font-size 0.7s var(--ease), margin 0.6s var(--ease);
 }
+body.no-phase .num { margin-top: 0; }
 
 .num.tick { animation: tick 0.45s var(--ease); }
 
@@ -172,14 +177,15 @@ body.mode-idle .clock { opacity: 0; }
 }
 
 .sub {
-  min-height: 1.3em;
+  height: 1.3em;
   margin-top: 1.4cqw;
   font-size: 1.75cqw;
   letter-spacing: 0.02em;
   color: var(--dim);
   white-space: nowrap;
-  transition: color var(--theme) ease;
+  transition: color var(--theme) ease, height 0.6s var(--ease), margin 0.6s var(--ease), opacity 0.45s ease;
 }
+body.no-sub .sub { height: 0; margin-top: 0; opacity: 0; }
 
 body.go .mid { animation: go 0.65s var(--ease); }
 
@@ -209,7 +215,7 @@ body.go .mid { animation: go 0.65s var(--ease); }
 
 body.has-lobby .lobby {
   height: 14cqw;
-  margin-bottom: 2.4cqw;
+  margin-bottom: 3.2cqw; /* keeps the cards' rules apart from the segmented bar */
   opacity: 1;
 }
 
@@ -350,18 +356,32 @@ body.has-lobby .lobby.compact { height: 7.6cqw; }
   from { opacity: 0; transform: translateY(1.2cqw); }
 }
 
-/* ===== Progress ===== */
+/* ===== Progress: one segment per exercise plus the extra ===== */
 .progress { transition: opacity 0.5s ease; }
 body.no-bar .progress { opacity: 0; }
 
-.bar {
-  position: relative;
-  height: 0.26cqw;
-  background: var(--line);
-  transition: background-color var(--theme) ease;
+.bar,
+.legend {
+  display: flex;
+  gap: 0.42cqw;
 }
 
-.bar i {
+.bar {
+  align-items: center;
+  height: 0.52cqw;
+}
+
+/* Past segments full, the current one thicker, the ones still ahead dim. */
+.seg {
+  position: relative;
+  flex: 1 1 0;
+  height: 0.26cqw;
+  background: var(--line);
+  transition: height 0.5s var(--ease), background-color var(--theme) ease;
+}
+.seg.on { height: 0.52cqw; }
+
+.seg i {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -371,16 +391,7 @@ body.no-bar .progress { opacity: 0; }
   transition: width 0.9s linear, background-color var(--theme) ease;
 }
 
-.bar b {
-  position: absolute;
-  top: -0.45cqw;
-  width: 1px;
-  height: 1.16cqw;
-  background: var(--dim);
-}
-
 .legend {
-  position: relative;
   height: 1.5cqw;
   margin-top: 0.9cqw;
   font-size: 0.95cqw;
@@ -390,13 +401,12 @@ body.no-bar .progress { opacity: 0; }
 }
 
 .legend span {
-  position: absolute;
-  top: 0;
+  flex: 1 1 0;
+  min-width: 0;
   white-space: nowrap;
   transition: color 0.5s ease;
 }
-.legend .mid-mark { transform: translateX(-50%); }
-.legend span.on { color: var(--fg); }
+.legend span.on { color: var(--fg); font-weight: 600; }
 
 /* ===== Sound gate and status ===== */
 .gate {

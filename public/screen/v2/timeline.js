@@ -6,6 +6,7 @@ export const MIN = 60 * SEC;
 export const HOUR = 60 * MIN;
 export const DAY = 24 * HOUR;
 export const CLASS_END = 55 * MIN;
+export const LAST_STRETCH = 45 * MIN; // «Quedan 10 minutos»: the number turns #04afdd and the voice says it
 export const TZ = "America/Argentina/Buenos_Aires";
 
 // Voice cues, relative to the start of the class they belong to.
@@ -16,8 +17,7 @@ export const CUES = [
   { id: "count2", line: "count2", offset: -2 * SEC },
   { id: "count1", line: "count1", offset: -1 * SEC },
   { id: "start", line: "start", offset: 0 },
-  { id: "minute20", line: "minute20", offset: 20 * MIN },
-  { id: "minute45", line: "minute45", offset: 45 * MIN },
+  { id: "minute45", line: "minute45", offset: LAST_STRETCH },
   { id: "end", line: "end", offset: CLASS_END },
 ];
 
@@ -126,9 +126,16 @@ function namesFor(schedule, classStart, now) {
   };
 }
 
+// Index of the exercise segment `minute` falls in: cuts [15, 25, 35, 45] give 0..3 for the
+// four exercises and 4 for the extra (45 to the end of the class).
+export function segmentAt(minute, exerciseCuts) {
+  const index = exerciseCuts.findIndex((cut) => minute < cut);
+  return index === -1 ? exerciseCuts.length : index;
+}
+
 // schedule: { hasClassAt(classStart), lobbyFor(classStart, now) }
 export function computeView(now, schedule, options) {
-  const { namesFromMinute, namesUntilMinute, finalCountSeconds } = options;
+  const { namesFromMinute, namesUntilMinute, finalCountSeconds, exerciseCuts } = options;
   const hour = hourStartOf(now);
   const next = hour + HOUR;
   const elapsed = Math.floor((now - hour) / SEC);
@@ -153,14 +160,14 @@ export function computeView(now, schedule, options) {
 
   if (elapsed < classSeconds) {
     if (classNow) {
-      const step = minute < 20 ? 0 : minute < 45 ? 1 : 2;
+      const last = elapsed * SEC >= LAST_STRETCH;
       Object.assign(view, {
         mode: "class",
-        stage: ["warmup", "series", "last"][step],
+        stage: last ? "last" : "work",
         num: mmss(classSeconds - elapsed),
-        last: step === 2,
+        last,
         fill: elapsed / classSeconds,
-        step,
+        step: segmentAt(minute, exerciseCuts),
       });
       if (minute < namesUntilMinute) view.names = namesFor(schedule, hour, now);
     }
@@ -170,7 +177,7 @@ export function computeView(now, schedule, options) {
   const remaining = 3600 - elapsed;
   const lobbyTime = classNext && minute >= namesFromMinute;
   if (classNow) {
-    Object.assign(view, { mode: "done", stage: "done", num: mmss(remaining), inverted: true, fill: 1, step: 3 });
+    Object.assign(view, { mode: "done", stage: "done", num: mmss(remaining), inverted: true, fill: 1 });
   } else if (lobbyTime) {
     Object.assign(view, { mode: "lobby", stage: "lobby", num: mmss(remaining) });
   }

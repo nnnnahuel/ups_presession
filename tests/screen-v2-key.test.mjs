@@ -86,7 +86,7 @@ const heartbeat = (server, headers = {}) =>
   fetch(`${server.base}/screen/api/display/heartbeat`, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
-    body: JSON.stringify({ studio: "A", audioUnlocked: true, voiceReady: true, lastCue: "minute20", lastCueAt: "2026-11-18T23:20:00.000Z" }),
+    body: JSON.stringify({ studio: "A", audioUnlocked: true, voiceReady: true, lastCue: "minute45", lastCueAt: "2026-11-18T23:45:00.000Z" }),
   }).then((res) => res.json());
 
 const displays = (server) => fetch(`${server.base}/screen/api/health`).then((res) => res.json()).then((body) => body.screenDisplays);
@@ -173,8 +173,25 @@ test("the right key reads the lobby through the portal and records the heartbeat
   const [display] = await displays(server);
   assert.deepEqual(
     [display.studio, display.audioUnlocked, display.lastCue, display.online],
-    ["A", true, "minute20", true]
+    ["A", true, "minute45", true]
   );
 
   assert.ok(!server.output().includes(SCREEN_KEY), "the key never reaches the logs");
+});
+
+test("/screen/tts accepts exactly the phrases in voice-lines.js", async (t) => {
+  const server = await startServer({});
+  t.after(() => server.stop());
+
+  const tts = (text) =>
+    fetch(`${server.base}/screen/tts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).then(async (res) => [res.status, (await res.json()).error]);
+
+  // Allowed, but this server has no ElevenLabs key and nothing stored: 503 instead of 400.
+  assert.deepEqual(await tts("Quedan diez minutos"), [503, "missing_elevenlabs_api_key"]);
+  assert.deepEqual(await tts("Minuto veinte. Todos en su primera serie"), [400, "text_not_allowed"]);
+  assert.deepEqual(await tts("Quedan diez minutos. Última serie"), [400, "text_not_allowed"]);
 });
