@@ -44,9 +44,9 @@ const TEXT = {
 
 // ===== Ajustes =====
 const SETTINGS = {
-  // Las mismas llamadas que usa hoy /screen (public/screen/script.js).
-  MUSIC_DOWN_PATH: "/screen/volume/ramp/50?duration=1200&from=88",
-  MUSIC_UP_PATH: "/screen/volume/ramp/88?duration=1200",
+  // Las rutas de volumen de /screen, con la música normal al 100 (la pantalla vieja tiene su propio nivel).
+  MUSIC_DOWN_PATH: "/screen/volume/ramp/50?duration=1200&from=100",
+  MUSIC_UP_PATH: "/screen/volume/ramp/100?duration=1200",
   MUSIC_RESTORE_MINUTE: 2, // tras «Sesión completa» la música vuelve a subir en este minuto de la clase nueva
   MUSIC_DUCK_LEAD_MS: 3500, // el worker pregunta cada 2 s y la rampa dura 1,2 s
   MUSIC_DUCK_TAIL_MS: 800,
