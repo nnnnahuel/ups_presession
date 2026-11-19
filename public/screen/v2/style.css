@@ -37,13 +37,18 @@ body.final { --num-size: 26cqw; }
 body.final.has-lobby { --num-size: 17.5cqw; }
 /* Minutes 0-4 with names: no title or subtitle, so the countdown can be bigger. */
 body.has-lobby.no-phase.no-sub { --num-size: 19cqw; }
+/* From minute 5 the names are a thin row: the countdown is back to its size without names. */
+body.has-lobby.roster,
+body.has-lobby.roster.no-phase.no-sub { --num-size: 21.5cqw; }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body { width: 100%; height: 100%; overflow: hidden; }
 
 body {
-  background: var(--bg);
+  /* !important: OBS's browser source injects `body { background-color: rgba(0,0,0,0) }`, which
+     turned the white screens black. Transitions still win over !important, so the fade stays. */
+  background-color: var(--bg) !important;
   color: var(--fg);
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -61,7 +66,10 @@ body.cut *::before,
 body.cut *::after,
 body.booting .frame *,
 body.booting .frame *::before,
-body.booting .frame *::after { transition: none !important; }
+body.booting .frame *::after,
+body.instant *,
+body.instant *::before,
+body.instant *::after { transition: none !important; }
 
 /* 16:9 stage, letterboxed on other aspect ratios. Every size is in cqw. */
 .stage {
@@ -236,9 +244,11 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
   transition: color var(--theme) ease;
 }
 
-/* Equal columns up to ~300 px, packed from the left. */
+/* Equal columns up to ~300 px, packed from the left. Positioned, so cards leaving the wall
+   can fade in place out of the flow. */
 .names {
   --digits: 2;
+  position: relative;
   flex: 1;
   min-height: 0;
   margin-top: 2cqw;
@@ -270,7 +280,7 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
 /* A label that does not fit is scaled (--fit, set by app.js) around its baseline.
    Inter: ascender 0.969em, descender 0.242em. */
 .athlete .tag {
-  font-size: calc(var(--u) * 0.7);
+  font-size: calc(var(--u) * var(--tag-size, 0.7));
   font-weight: 600;
   letter-spacing: 0.32em;
   line-height: 1;
@@ -287,7 +297,7 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
   margin-top: calc(var(--u) * 0.55);
   font-family: "UP.S Numeral", ui-monospace, monospace;
   font-weight: 700;
-  font-size: min(calc(var(--u) * 6.8), calc(100cqi / (var(--digits) * 0.62)));
+  font-size: min(calc(var(--u) * var(--sn-size, 6.8)), calc(100cqi / (var(--digits) * 0.62)));
   line-height: 0.85;
   margin-left: -0.06em; /* the digits' side bearing: lines the number up with the label and the name */
   font-variant-numeric: tabular-nums;
@@ -296,6 +306,32 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
   -webkit-text-stroke: max(1px, calc(var(--u) * 0.105)) var(--ink);
   transform-origin: 0 100%;
   transition: color 0.3s ease;
+  /* Room for the final number from the start: 99 -> 100 never pushes anything. */
+  min-width: calc(var(--sn-digits, 1) * 0.62em);
+}
+
+/* The scan adds one: each digit that changes rolls up, the old one out the top, the new one in
+   from below. Cells keep the line's own height and baseline, so nothing moves before or after. */
+.athlete .sn .digit {
+  display: inline-block;
+  vertical-align: top;
+  height: 0.85em;
+  overflow: hidden;
+}
+.athlete .sn .roll {
+  display: block;
+  /* Even, no overshoot: it should read as a counter turning, not a snap. */
+  animation: roll 0.6s cubic-bezier(0.45, 0.05, 0.25, 1) both;
+}
+.athlete .sn .roll > span {
+  display: block;
+  height: 0.85em;
+}
+.athlete .sn .blank { visibility: hidden; }
+
+@keyframes roll {
+  from { transform: none; }
+  to { transform: translateY(-50%); }
 }
 .athlete.lit .sn { color: var(--ink); }
 
@@ -303,7 +339,7 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
    which the longest name fits its column, never above the normal size. */
 .athlete .name {
   margin-top: calc(var(--u) * 0.7);
-  font-size: calc(var(--u) * 2.1 * var(--name-fit, 1));
+  font-size: calc(var(--u) * var(--name-size, 2.1) * var(--name-fit, 1));
   font-weight: 800;
   letter-spacing: 0.01em;
   line-height: 1.1;
@@ -314,7 +350,7 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
 /* Older bridge without session numbers: just the name, larger. */
 .athlete.no-number .tag,
 .athlete.no-number .sn { display: none; }
-.athlete.no-number .name { font-size: calc(var(--u) * 3 * var(--name-fit, 1)); }
+.athlete.no-number .name { font-size: calc(var(--u) * var(--solo-size, 3) * var(--name-fit, 1)); }
 
 /* The scan moment, once: the number fills in #04afdd with a slight pulse and settles in its
    own colour (it stays #04afdd for a first session or a milestone). */
@@ -335,6 +371,44 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
 @keyframes slot-in {
   from { opacity: 0; transform: translateY(1.2cqw); }
 }
+
+/* ===== From minute 5 to :55: the athletes present, in one quiet row =====
+   Same cards, smaller: 8 at full size; with more, the columns narrow and names and numbers shrink
+   to fit (never cut, never a second line). Cards leaving the wall keep their old size (.leaving). */
+body.has-lobby.roster .lobby { height: 8.9cqw; }
+
+body.roster .names {
+  --sn-size: 3.8;
+  --name-size: 1.7;
+  --tag-size: 0.6;
+  --solo-size: 2.2;
+  margin-top: 1.1cqw;
+  grid-auto-columns: minmax(0, 12.5cqw); /* up to 6 present, even «Maximiliano» fits at full size */
+  column-gap: 1.2cqw;
+}
+body.roster .athlete:not(.leaving) .sn { margin-top: calc(var(--u) * 0.3); }
+body.roster .athlete:not(.leaving) .name {
+  margin-top: calc(var(--u) * 0.4);
+  transition: font-size 0.6s var(--ease); /* a long name arriving late shrinks the row smoothly */
+}
+.athlete.leaving { pointer-events: none; }
+/* While the cards move from the big strip into the row they start outside the (already smaller)
+   strip, so it must not clip them. */
+body.morphing .lobby { overflow: visible; }
+
+/* Hidden copy used to measure a name at its full size (see fitNames in app.js). */
+.athlete.probe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.athlete.probe .name {
+  font-size: calc(var(--u) * var(--name-size, 2.1)) !important;
+  transition: none !important;
+}
+.athlete.probe.no-number .name { font-size: calc(var(--u) * var(--solo-size, 3)) !important; }
 
 /* ===== Progress: one continuous line from minute 0 to 55 ===== */
 .progress { transition: opacity 0.5s ease; }

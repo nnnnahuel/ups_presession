@@ -99,37 +99,58 @@ export function createClassMemory(initial = []) {
 }
 
 // ===== What the screen shows =====
-function namesFor(schedule, classStart, now) {
-  const lobby = schedule.lobbyFor(classStart, now);
-  if (!lobby || !Array.isArray(lobby.athletes) || lobby.athletes.length === 0) return null;
+// The athletes of one class slot (the portal's `lobby` or `current`). With presentOnly, only the
+// ones who scanned: the quiet row shown from minute 5 to the end of the class (`compact`).
+function rosterFrom(slot, classStart, { presentOnly = false } = {}) {
+  if (!slot || !Array.isArray(slot.athletes) || slot.athletes.length === 0) return null;
   const seen = new Set();
-  const athletes = lobby.athletes.map((athlete, index) => {
+  let athletes = slot.athletes.map((athlete, index) => {
     let id = String(athlete.id || `athlete-${index}`);
     if (seen.has(id)) id = `${id}-${index}`;
     seen.add(id);
     const first = athlete.first_session === true;
+    const lit = Boolean(athlete.checked_in_at);
     const session =
       Number.isSafeInteger(athlete.session_number) && athlete.session_number >= 1 ? athlete.session_number : null;
+    // session_number is today's session. A first session is session 1; without session_number
+    // (older bridge) the card shows only the name.
+    const finalNumber = first ? 1 : session;
     return {
       id,
       name: String(athlete.name || ""),
-      lit: Boolean(athlete.checked_in_at),
+      lit,
       first,
-      milestone: athlete.milestone === true,
-      // A first session is session 1; without session_number (older bridge) the card shows only the name.
-      number: first ? 1 : session,
+      // The milestone's #04afdd shows when the scan reaches it, not before.
+      milestone: athlete.milestone === true && lit,
+      // On the wall the number counts sessions done: before scanning, the ones already done
+      // (never 0; a first session stays 1); the scan adds today's.
+      number: finalNumber === null || lit || first ? finalNumber : Math.max(1, finalNumber - 1),
+      finalNumber,
     };
   });
+  if (presentOnly) athletes = athletes.filter((a) => a.lit);
+  if (athletes.length === 0) return null;
   return {
     classStart,
-    coach: typeof lobby.coach === "string" && lobby.coach.trim() ? lobby.coach.trim() : null,
+    coach: typeof slot.coach === "string" && slot.coach.trim() ? slot.coach.trim() : null,
     lit: athletes.filter((a) => a.lit).length,
     total: athletes.length,
     athletes,
+    compact: presentOnly,
   };
 }
 
-// schedule: { hasClassAt(classStart), lobbyFor(classStart, now) }
+function namesFor(schedule, classStart, now) {
+  return rosterFrom(schedule.lobbyFor(classStart, now), classStart);
+}
+
+// Without `current.athletes` (an older portal) there is nothing to show after minute 5.
+function presentFor(schedule, classStart, now) {
+  const current = typeof schedule.currentFor === "function" ? schedule.currentFor(classStart, now) : null;
+  return rosterFrom(current, classStart, { presentOnly: true });
+}
+
+// schedule: { hasClassAt(classStart), lobbyFor(classStart, now), currentFor(classStart, now) }
 export function computeView(now, schedule, options) {
   const { namesFromMinute, namesUntilMinute, finalCountSeconds } = options;
   const hour = hourStartOf(now);
@@ -163,7 +184,8 @@ export function computeView(now, schedule, options) {
         last,
         fill: elapsed / classSeconds,
       });
-      if (minute < namesUntilMinute) view.names = namesFor(schedule, hour, now);
+      // Minutes 0-4: everyone booked, big. From minute 5: the ones present, in a quiet row.
+      view.names = minute < namesUntilMinute ? namesFor(schedule, hour, now) : presentFor(schedule, hour, now);
     }
     return view;
   }
@@ -242,17 +264,20 @@ export function musicShouldBeLow(now, schedule, { lineDurationMs, leadMs, tailMs
   return false;
 }
 
-// ===== Demo data (?demo=1, ?athletes=1..8) =====
-// scan: seconds from the class start (null = never scans). The first six are the default demo.
+// ===== Demo data (?demo=1, ?athletes=1..10) =====
+// scan: seconds from the class start (null = never scans). The first six are the default demo:
+// present, one absent (Belén) and one who arrives late, at minute 10 (Tomás).
 export const DEMO_ROSTER = [
   { id: "demo-agustina", name: "Agustina", session: 1, firstSession: true, scan: -150 },
   { id: "demo-marta", name: "Marta", session: 100, milestone: true, scan: -170 },
   { id: "demo-luna", name: "Luna", session: 247, scan: -125 },
-  { id: "demo-tomas", name: "Tomás", session: 12, scan: -70 },
+  { id: "demo-tomas", name: "Tomás", session: 12, scan: 600 },
   { id: "demo-maximiliano", name: "Maximiliano", session: 88, scan: 40 },
   { id: "demo-belen", name: "Belén", session: 31, scan: null },
   { id: "demo-valentina", name: "Valentina", session: 54, scan: -100 },
   { id: "demo-bruno", name: "Bruno", session: 7, scan: 20 },
+  { id: "demo-camila", name: "Camila", session: 19, scan: -40 },
+  { id: "demo-federico", name: "Federico", session: 140, scan: 360 },
 ];
 export const DEMO_DEFAULT_COUNT = 6;
 
@@ -281,5 +306,20 @@ export function demoLobby(classStart, now, count = DEMO_DEFAULT_COUNT) {
       checked_in_at: scannedAt !== null && now >= scannedAt ? new Date(scannedAt).toISOString() : null,
     };
   });
-  return { starts_at: new Date(classStart).toISOString(), coach: "Joaquín", athletes: sortLikePortal(athletes) };
+  return {
+    starts_at: new Date(classStart).toISOString(),
+    ends_at: new Date(classStart + CLASS_END).toISOString(),
+    coach: "Joaquín",
+    athletes: sortLikePortal(athletes),
+  };
+}
+
+// ===== Lobby polling =====
+// Every fastMs from :50 to :10 (lobby and arrivals); during a class every classMs, so a late
+// arrival shows up quickly; otherwise every slowMs. It always asks again by :50.
+export function lobbyPollDelayMs(now, classInProgress, { fastMs, classMs, slowMs, rate = 1 }) {
+  const intoHour = now - hourStartOf(now);
+  if (intoHour >= 50 * MIN || intoHour < 10 * MIN) return fastMs;
+  const untilFast = Math.max(1000, (50 * MIN - intoHour) / rate);
+  return Math.min(untilFast, classInProgress ? classMs : slowMs);
 }

@@ -2,13 +2,13 @@ import { VOICE_LINES } from "/screen/v2/voice-lines.js";
 import {
   DEMO_DEFAULT_COUNT,
   DEMO_ROSTER,
-  MIN,
   SEC,
   computeView,
   createClassMemory,
   demoLobby,
   dueCues,
   hhmm,
+  lobbyPollDelayMs,
   hourStartOf,
   hourStartOfIso,
   musicShouldBeLow,
@@ -51,6 +51,7 @@ const SETTINGS = {
   FINAL_COUNT_SECONDS: 10,
   LOBBY_FAST_MS: 5000, // de :50 a :10
   LOBBY_SLOW_MS: 60000,
+  LOBBY_CLASS_MS: 15000, // con una clase en curso (de :10 a :50), para que el que llega tarde aparezca rápido
   PORTAL_FRESH_MS: 3 * 60 * 1000,
   PORTAL_GRACE_MS: 20 * 1000, // tras un error del portal, cuánto se siguen usando los últimos datos
   HEARTBEAT_MS: 30000,
@@ -68,7 +69,7 @@ const SIM_START = parseClockParam(params.get("now"));
 const SPEED = clamp(Number.parseFloat(params.get("speed")) || 1, 0.1, 600);
 const SIMULATED = SIM_START !== null || SPEED !== 1;
 const DEMO = parseDemoParam(params.get("demo"));
-// ?athletes=1..8: how many demo athletes (default 6). Not ?demo=N, because ?demo=1 already means "demo on".
+// ?athletes=1..10: how many demo athletes (default 6). Not ?demo=N, because ?demo=1 already means "demo on".
 const DEMO_COUNT = clamp(Number.parseInt(params.get("athletes"), 10) || DEMO_DEFAULT_COUNT, 1, DEMO_ROSTER.length);
 const MUTE = isTrue(params.get("mute"));
 const TEST_MODE = SIMULATED || DEMO !== null; // never touches the studio volume, never sends heartbeats
@@ -178,6 +179,13 @@ const schedule = {
     if (!data || !data.lobby || hourStartOfIso(data.lobby.starts_at) !== classStart) return null;
     return data.lobby;
   },
+  // The class in progress, with its athletes once the portal sends them (`current.athletes`).
+  currentFor(classStart, now) {
+    if (DEMO) return demoHasClass(classStart) ? demoLobby(classStart, now, DEMO_COUNT) : null;
+    const data = portalData();
+    if (!data || !data.current || hourStartOfIso(data.current.starts_at) !== classStart) return null;
+    return data.current;
+  },
   known() {
     return DEMO !== null || portalData() !== null;
   },
@@ -278,6 +286,9 @@ function render(view) {
 
 // Keyed athlete cards, reordered with a FLIP animation when the server order changes.
 // Left to right is the portal order; the session number is the hero of each card.
+// From minute 5 (`names.compact`) the same cards become a quiet row of the athletes present.
+const ROSTER_MORPH_MS = 900;
+const LEAVE_FADE_MS = 450;
 const slots = new Map();
 let namesKey = "";
 let namesShown = false;
@@ -290,23 +301,75 @@ function createSlot() {
   return li;
 }
 
-function fillSlot(li, athlete) {
+function fillSlot(li, athlete, rollNumber) {
   const hasNumber = athlete.number !== null;
   li.classList.toggle("no-number", !hasNumber);
   li.classList.toggle("first", athlete.first && hasNumber);
   li.classList.toggle("milestone", athlete.milestone && hasNumber);
   setText(li.querySelector(".tag"), hasNumber ? (athlete.first ? TEXT.firstSessionLabel : TEXT.sessionLabel) : "");
-  setText(li.querySelector(".sn"), hasNumber ? String(athlete.number) : "");
+  const sn = li.querySelector(".sn");
+  sn.style.setProperty("--sn-digits", String(hasNumber ? String(athlete.finalNumber).length : 1));
+  setNumber(sn, hasNumber ? String(athlete.number) : "", rollNumber);
   setText(li.querySelector(".name"), athlete.name);
+}
+
+// The number of a card, rolled up digit by digit when the scan adds one (see .digit in style.css).
+const NUMBER_ROLL_MS = 600;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function setNumber(sn, value, roll) {
+  if (sn.dataset.rollTo !== undefined) {
+    if (sn.dataset.rollTo === value) return; // already rolling there
+    delete sn.dataset.rollTo;
+    sn.textContent = "";
+  }
+  const from = sn.textContent;
+  if (!roll || !from || from === value || reducedMotion.matches) {
+    setText(sn, value);
+    return;
+  }
+  const width = Math.max(from.length, value.length);
+  sn.replaceChildren(...Array.from({ length: width }, (_, index) => digitCell(from[index] || "", value[index] || "")));
+  sn.dataset.rollTo = value;
+  setTimeout(() => {
+    if (sn.dataset.rollTo !== value) return;
+    delete sn.dataset.rollTo;
+    sn.textContent = value;
+  }, NUMBER_ROLL_MS + 80);
+}
+
+function digitCell(oldDigit, newDigit) {
+  const cell = document.createElement("span");
+  cell.className = "digit";
+  if (oldDigit === newDigit) {
+    cell.textContent = newDigit;
+    return cell;
+  }
+  const roll = document.createElement("span");
+  roll.className = "roll";
+  for (const digit of [oldDigit, newDigit]) {
+    const face = document.createElement("span");
+    // An empty position (9 -> 10) still needs a digit's width: a hidden 0.
+    face.textContent = digit || "0";
+    if (!digit) face.className = "blank";
+    roll.appendChild(face);
+  }
+  cell.appendChild(roll);
+  return cell;
 }
 
 function clearSlots() {
   slots.clear();
   el.names.replaceChildren();
+  body.classList.remove("roster");
+}
+
+function cardParts(li) {
+  return [...li.children];
 }
 
 function renderNames(names) {
-  const key = names ? JSON.stringify([names.classStart, names.coach, names.athletes]) : "";
+  const key = names ? JSON.stringify([names.classStart, names.coach, names.compact, names.athletes]) : "";
   if (key === namesKey) return;
   namesKey = key;
 
@@ -323,48 +386,22 @@ function renderNames(names) {
   const appearing = !namesShown;
   if (appearing) clearSlots();
   namesShown = true;
-  body.classList.add("has-lobby");
-  setText(el.lobbyTitle, names.coach ? TEXT.coachLine(names.coach) : "");
-  el.lobbyHead.classList.toggle("empty", !names.coach);
-
-  const firstLeft = new Map();
-  if (!appearing) for (const [id, li] of slots) firstLeft.set(id, li.getBoundingClientRect().left);
-
-  const wanted = new Set();
-  names.athletes.forEach((athlete, index) => {
-    let li = slots.get(athlete.id);
-    if (!li) {
-      li = createSlot();
-      slots.set(athlete.id, li);
-      if (appearing) {
-        li.style.setProperty("--i", String(index));
-        li.classList.add("enter");
-        li.addEventListener("animationend", () => li.classList.remove("enter"), { once: true });
-      }
-    }
-    fillSlot(li, athlete);
-    const wasLit = li.classList.contains("lit");
-    li.classList.toggle("lit", athlete.lit);
-    if (athlete.lit && !wasLit && !appearing) retrigger(li, "ignite", 1000);
-    el.names.appendChild(li);
-    wanted.add(athlete.id);
-  });
-  // Every number in the row shares one size, set by the longest number (3 digits fit at full size).
-  const digits = Math.max(1, ...names.athletes.map((a) => (a.number === null ? 0 : String(a.number).length)));
-  el.names.style.setProperty("--digits", String(digits));
-  el.lobby.classList.toggle("compact", names.athletes.every((a) => a.number === null));
-  for (const [id, li] of slots) {
-    if (!wanted.has(id)) {
-      li.remove();
-      slots.delete(id);
-    }
+  if (!appearing && names.compact && !body.classList.contains("roster")) {
+    morphToRoster(names);
+    return;
   }
+  body.classList.add("has-lobby");
+  body.classList.toggle("roster", names.compact);
+
+  const firstBox = new Map();
+  if (!appearing) for (const [id, li] of slots) firstBox.set(id, li.getBoundingClientRect());
+  updateSlots(names, appearing);
 
   const moved = [];
   for (const [id, li] of slots) {
-    const left = firstLeft.get(id);
-    if (left === undefined) continue;
-    const dx = left - li.getBoundingClientRect().left;
+    const before = firstBox.get(id);
+    if (!before) continue;
+    const dx = before.left - li.getBoundingClientRect().left;
     if (Math.abs(dx) < 1) continue;
     li.style.transition = "none";
     li.style.transform = `translateX(${dx}px)`;
@@ -380,7 +417,125 @@ function renderNames(names) {
       })
     );
   }
+}
+
+// Cards for these names, in this order. A card that is not wanted any more is removed, unless
+// `keepLeaving` takes it (the minute-5 morph fades it out in place).
+function updateSlots(names, appearing, keepLeaving = null) {
+  setText(el.lobbyTitle, names.coach ? TEXT.coachLine(names.coach) : "");
+  el.lobbyHead.classList.toggle("empty", !names.coach);
+
+  const wanted = new Set();
+  names.athletes.forEach((athlete, index) => {
+    let li = slots.get(athlete.id);
+    const isNew = !li;
+    if (!li) {
+      li = createSlot();
+      slots.set(athlete.id, li);
+      // On first appearance the cards come in one after another; later (a late arrival in the
+      // row), the new card comes in on its own.
+      if (appearing || names.compact) {
+        li.style.setProperty("--i", String(appearing ? index : 0));
+        li.classList.add("enter");
+        li.addEventListener("animationend", () => li.classList.remove("enter"), { once: true });
+      }
+    }
+    const wasLit = li.classList.contains("lit");
+    const scanning = athlete.lit && !wasLit && !appearing;
+    // A card already on the wall rolls its number up at the scan; a late arrival in the row comes
+    // in with its final number.
+    fillSlot(li, athlete, scanning && !isNew);
+    li.classList.toggle("lit", athlete.lit);
+    if (scanning) retrigger(li, "ignite", 1000);
+    el.names.appendChild(li);
+    wanted.add(athlete.id);
+  });
+  // Every number in the row shares one size, set by the longest number (3 digits fit at full size).
+  const digits = Math.max(1, ...names.athletes.map((a) => (a.finalNumber === null ? 0 : String(a.finalNumber).length)));
+  el.names.style.setProperty("--digits", String(digits));
+  el.lobby.classList.toggle("compact", names.athletes.every((a) => a.number === null));
+  for (const [id, li] of slots) {
+    if (wanted.has(id)) continue;
+    slots.delete(id);
+    if (keepLeaving) keepLeaving(li);
+    else li.remove();
+  }
   fitNames();
+}
+
+// Minute 5, one movement: the cards of the athletes present shrink into the row, the absent ones
+// fade where they are, the countdown grows. The final layout is applied at once (no CSS
+// transitions) and every piece is then animated from where it was to where it is (FLIP).
+function morphToRoster(names) {
+  const pieces = [el.num, el.lobbyHead];
+  for (const li of slots.values()) pieces.push(...cardParts(li));
+  const before = new Map(pieces.map((node) => [node, node.getBoundingClientRect()]));
+  // Where each card is and how big its text is now: a card leaving the wall keeps both.
+  const cardsBefore = new Map(
+    [...slots.values()].map((li) => [li, { box: li.getBoundingClientRect(), sizes: cardParts(li).map((part) => getComputedStyle(part).fontSize) }])
+  );
+  const leaving = [];
+
+  body.classList.add("instant", "morphing");
+  body.classList.add("roster");
+  updateSlots(names, false, (li) => {
+    const { box, sizes } = cardsBefore.get(li);
+    cardParts(li).forEach((part, index) => (part.style.fontSize = sizes[index]));
+    li.classList.add("leaving");
+    leaving.push({ li, box });
+  });
+  const namesBox = el.names.getBoundingClientRect();
+  for (const { li, box } of leaving) {
+    Object.assign(li.style, {
+      position: "absolute",
+      left: `${box.left - namesBox.left}px`,
+      top: `${box.top - namesBox.top}px`,
+      width: `${box.width}px`,
+      height: `${box.height}px`,
+    });
+  }
+
+  const animated = [];
+  for (const [node, from] of before) {
+    if (!node.isConnected || node.closest(".leaving")) continue;
+    const to = node.getBoundingClientRect();
+    if (!to.width || !to.height || !from.height) continue;
+    const scale = from.height / to.height;
+    if (node === el.num) {
+      // Centred text: scale around its centre.
+      node.style.transformOrigin = "50% 50%";
+      node.style.transform = `translate(${from.left + from.width / 2 - (to.left + to.width / 2)}px, ${
+        from.top + from.height / 2 - (to.top + to.height / 2)
+      }px) scale(${scale})`;
+    } else {
+      node.style.transformOrigin = "0 0";
+      node.style.transform = `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${scale})`;
+    }
+    animated.push(node);
+  }
+  void body.offsetWidth;
+  body.classList.remove("instant");
+
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      for (const node of animated) {
+        node.style.transition = `transform ${ROSTER_MORPH_MS}ms var(--ease)`;
+        node.style.transform = "";
+      }
+      for (const { li } of leaving) {
+        li.style.transition = `opacity ${LEAVE_FADE_MS}ms ease`;
+        li.style.opacity = "0";
+      }
+      setTimeout(() => {
+        for (const node of animated) {
+          node.style.transition = "";
+          node.style.transformOrigin = "";
+        }
+        for (const { li } of leaving) li.remove();
+        body.classList.remove("morphing");
+      }, ROSTER_MORPH_MS + 100);
+    })
+  );
 }
 
 // Names are always one line and never cut. Every name in the row shares one size: the largest at
@@ -391,13 +546,23 @@ function fitText(node, available) {
   node.style.setProperty("--fit", natural > available && natural > 0 ? String(available / natural) : "1");
 }
 
+// Each name is measured on a hidden copy at the row's full size, so a font-size transition in
+// progress (or the font still loading) never skews the fit.
+const nameProbe = document.createElement("li");
+nameProbe.className = "athlete probe";
+nameProbe.setAttribute("aria-hidden", "true");
+nameProbe.innerHTML = '<span class="name"></span>';
+
 function fitNames() {
-  el.names.style.setProperty("--name-fit", "1");
+  if (!nameProbe.isConnected) el.names.appendChild(nameProbe);
+  const probeName = nameProbe.firstChild;
   let fit = 1;
   for (const li of slots.values()) {
     const available = li.clientWidth;
     if (!available) continue;
-    const natural = li.querySelector(".name").scrollWidth;
+    nameProbe.classList.toggle("no-number", li.classList.contains("no-number"));
+    probeName.textContent = li.querySelector(".name").textContent;
+    const natural = probeName.scrollWidth;
     if (natural > available) fit = Math.min(fit, available / natural);
     fitText(li.querySelector(".tag"), available);
   }
@@ -406,6 +571,7 @@ function fitNames() {
 
 window.addEventListener("resize", () => requestAnimationFrame(fitNames));
 document.fonts.addEventListener("loadingdone", () => requestAnimationFrame(fitNames));
+document.fonts.ready.then(() => requestAnimationFrame(fitNames));
 
 // ===== Audio =====
 const SPEAKER_ICON =
@@ -613,9 +779,12 @@ async function pollLobby() {
 
 function nextLobbyDelay() {
   const now = nowMs();
-  const intoHour = now - hourStartOf(now);
-  if (intoHour >= 50 * MIN || intoHour < 10 * MIN) return SETTINGS.LOBBY_FAST_MS;
-  return clamp((50 * MIN - intoHour) / RATE, 1000, SETTINGS.LOBBY_SLOW_MS);
+  return lobbyPollDelayMs(now, schedule.hasClassAt(hourStartOf(now)), {
+    fastMs: SETTINGS.LOBBY_FAST_MS,
+    classMs: SETTINGS.LOBBY_CLASS_MS,
+    slowMs: SETTINGS.LOBBY_SLOW_MS,
+    rate: RATE,
+  });
 }
 
 function sendHeartbeat() {

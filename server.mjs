@@ -2189,11 +2189,35 @@ function parseIsoTimestamp(value) {
   return Number.isFinite(Date.parse(value)) ? value : null;
 }
 
+function normalizeScreenCoach(value) {
+  return typeof value === "string" ? value.slice(0, 60) : null;
+}
+
+function normalizeScreenAthletes(list) {
+  return list
+    .filter((athlete) => athlete && typeof athlete === "object" && typeof athlete.name === "string")
+    .slice(0, 30)
+    .map((athlete, index) => ({
+      id: String(athlete.id ?? `athlete-${index}`).slice(0, 64),
+      name: athlete.name.trim().slice(0, 40),
+      checked_in_at: parseIsoTimestamp(athlete.checked_in_at),
+      first_session: athlete.first_session === true,
+      session_number:
+        Number.isSafeInteger(athlete.session_number) && athlete.session_number >= 1 ? athlete.session_number : null,
+      milestone: athlete.milestone === true,
+    }));
+}
+
+// The class in progress. `coach` and `athletes` pass only when the portal sends them, so the
+// screen can tell an older portal (no list: it shows nothing after minute 5) from an empty class.
 function normalizeScreenSlot(slot) {
   if (!slot || typeof slot !== "object") return null;
   const startsAt = parseIsoTimestamp(slot.starts_at);
   if (!startsAt) return null;
-  return { starts_at: startsAt, ends_at: parseIsoTimestamp(slot.ends_at) };
+  const result = { starts_at: startsAt, ends_at: parseIsoTimestamp(slot.ends_at) };
+  if ("coach" in slot) result.coach = normalizeScreenCoach(slot.coach);
+  if (Array.isArray(slot.athletes)) result.athletes = normalizeScreenAthletes(slot.athletes);
+  return result;
 }
 
 // Pass through only the contract fields the screen uses.
@@ -2204,22 +2228,10 @@ function normalizeScreenLobbyPayload(data, studio) {
   const rawLobby = data.lobby;
   const lobbyStartsAt = rawLobby && typeof rawLobby === "object" ? parseIsoTimestamp(rawLobby.starts_at) : null;
   if (lobbyStartsAt) {
-    const athletes = Array.isArray(rawLobby.athletes) ? rawLobby.athletes : [];
     lobby = {
       starts_at: lobbyStartsAt,
-      coach: typeof rawLobby.coach === "string" ? rawLobby.coach.slice(0, 60) : null,
-      athletes: athletes
-        .filter((athlete) => athlete && typeof athlete === "object" && typeof athlete.name === "string")
-        .slice(0, 30)
-        .map((athlete, index) => ({
-          id: String(athlete.id ?? `athlete-${index}`).slice(0, 64),
-          name: athlete.name.trim().slice(0, 40),
-          checked_in_at: parseIsoTimestamp(athlete.checked_in_at),
-          first_session: athlete.first_session === true,
-          session_number:
-            Number.isSafeInteger(athlete.session_number) && athlete.session_number >= 1 ? athlete.session_number : null,
-          milestone: athlete.milestone === true,
-        })),
+      coach: normalizeScreenCoach(rawLobby.coach),
+      athletes: normalizeScreenAthletes(Array.isArray(rawLobby.athletes) ? rawLobby.athletes : []),
     };
   }
 
