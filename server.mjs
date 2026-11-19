@@ -1,4 +1,5 @@
 import express from "express";
+import { createHash, timingSafeEqual } from "node:crypto";
 import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distDir = path.join(__dirname, "dist");
 const screenDir = path.join(__dirname, "public", "screen");
+const screenV2Dir = path.join(screenDir, "v2");
 const port = Number(process.env.PORT || 3000);
 const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY || "";
 const ELEVEN_VOICE_ID = process.env.ELEVEN_VOICE_ID || "9oPKasc15pfAbMr7N6Gs";
@@ -49,6 +51,39 @@ const spotifyStudioClients = new Map();
 
 const checkinClients = new Set();
 const ttsCache = new Map();
+const ttsInflight = new Map();
+
+// /screen/tts only speaks these texts. Each new text is a paid ElevenLabs call,
+// so the endpoint must not accept arbitrary input. These are the exact phrases
+// public/screen/script.js picks from at :45 and :55; /screen/v2 plays recorded files.
+const LEGACY_SCREEN_TTS_LINES = [
+  "¡Ya quedan diez minutos!, ¡A terminar fuerte!",
+  "¡Los últimos diez minutos!, ¡Vamos con todo!",
+  "¡Últimos diez minutos!, ¡Último empujón!",
+  "¡Sesión completada!, ¡Buen trabajo!",
+  "¡Entrenamiento terminado!, ¡Excelente esfuerzo!",
+];
+const ALLOWED_TTS_TEXTS = new Set(LEGACY_SCREEN_TTS_LINES.map((text) => String(text).trim()));
+
+// Lobby bridge: the studio screen never talks to the portal directly.
+const UPS_PORTAL_API_BASE_URL = String(process.env.UPS_PORTAL_API_BASE_URL || "").trim().replace(/\/+$/, "");
+const STUDIO_SCREEN_API_TOKEN = String(process.env.STUDIO_SCREEN_API_TOKEN || "").trim();
+const SCREEN_LOBBY_CACHE_MS = 4000;
+const SCREEN_LOBBY_TIMEOUT_MS = 3500;
+const SCREEN_LOBBY_ERROR_LOG_MS = 5 * 60 * 1000;
+const screenLobbyCache = new Map();
+const screenLobbyInflight = new Map();
+const screenLobbyLastErrorLogAt = new Map();
+
+// The lobby lists first names and arrival times, so /screen/v2 must present this
+// key (header X-Screen-Key) for the lobby and the heartbeat. Unset = closed.
+const SCREEN_DISPLAY_KEY_DIGEST = String(process.env.SCREEN_DISPLAY_KEY || "").trim()
+  ? createHash("sha256").update(String(process.env.SCREEN_DISPLAY_KEY).trim()).digest()
+  : null;
+
+// Heartbeats from /screen/v2, kept in memory per studio.
+const SCREEN_DISPLAY_ONLINE_SECONDS = 90;
+const screenDisplays = new Map();
 const startState = { value: "", consumedAt: null };
 const TZ = "America/Argentina/Buenos_Aires";
 const DEFAULT_GYM_PLAYLIST_NAME = "UP.S - SPT";
@@ -159,6 +194,15 @@ async function initDb() {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_commands_created_at
       ON commands (created_at)
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS screen_tts_audio (
+      cache_key TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      audio BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
   `);
 
   await initPlaylistTables(pool);
@@ -1815,18 +1859,41 @@ app.post("/screen/start.txt", (req, res) => {
   res.send("Updated");
 });
 
-app.post("/screen/tts", (req, res) => {
-  const text = (req.body && req.body.text ? String(req.body.text) : "").trim();
-  if (!text) {
-    res.status(400).json({ error: "no_text" });
-    return;
-  }
+async function readStoredTts(cacheKey) {
+  const cached = ttsCache.get(cacheKey);
+  if (cached) return cached;
+  if (!pool) return null;
 
-  if (!ELEVEN_API_KEY) {
-    res.status(503).json({ error: "missing_elevenlabs_api_key" });
-    return;
+  try {
+    const result = await pool.query("SELECT audio FROM screen_tts_audio WHERE cache_key = $1", [cacheKey]);
+    const audio = result.rows[0]?.audio;
+    if (audio) {
+      ttsCache.set(cacheKey, audio);
+      return audio;
+    }
+  } catch (error) {
+    console.error("[screen-tts] stored audio read failed:", error.message);
   }
+  return null;
+}
 
+async function storeTts(cacheKey, text, audio) {
+  ttsCache.set(cacheKey, audio);
+  if (!pool) return;
+
+  try {
+    await pool.query(
+      `INSERT INTO screen_tts_audio (cache_key, text, audio)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (cache_key) DO NOTHING`,
+      [cacheKey, text, audio]
+    );
+  } catch (error) {
+    console.error("[screen-tts] stored audio write failed:", error.message);
+  }
+}
+
+function requestElevenLabsSpeech(text) {
   const payload = JSON.stringify({
     text,
     model_id: "eleven_multilingual_v2",
@@ -1838,58 +1905,86 @@ app.post("/screen/tts", (req, res) => {
     },
   });
 
-  const cacheKey = `${ELEVEN_VOICE_ID}::${ELEVEN_STABILITY}|${ELEVEN_SIMILARITY}|${ELEVEN_STYLE}|${ELEVEN_SPEAKER_BOOST}::${text}`;
-  const cached = ttsCache.get(cacheKey);
+  return new Promise((resolve, reject) => {
+    const request = https.request(
+      {
+        hostname: "api.elevenlabs.io",
+        path: `/v1/text-to-speech/${ELEVEN_VOICE_ID}`,
+        method: "POST",
+        headers: {
+          accept: "audio/mpeg",
+          "content-type": "application/json",
+          "xi-api-key": ELEVEN_API_KEY,
+          "content-length": Buffer.byteLength(payload),
+        },
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => resolve({ statusCode: response.statusCode, body: Buffer.concat(chunks) }));
+        response.on("error", reject);
+      }
+    );
 
-  if (cached) {
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-store");
-    res.send(cached);
+    request.on("error", reject);
+    request.write(payload);
+    request.end();
+  });
+}
+
+app.post("/screen/tts", async (req, res) => {
+  const text = (req.body && req.body.text ? String(req.body.text) : "").trim();
+  if (!text) {
+    res.status(400).json({ error: "no_text" });
     return;
   }
 
-  const request = https.request(
-    {
-      hostname: "api.elevenlabs.io",
-      path: `/v1/text-to-speech/${ELEVEN_VOICE_ID}`,
-      method: "POST",
-      headers: {
-        accept: "audio/mpeg",
-        "content-type": "application/json",
-        "xi-api-key": ELEVEN_API_KEY,
-        "content-length": Buffer.byteLength(payload),
-      },
-    },
-    (response) => {
-      const chunks = [];
+  if (!ALLOWED_TTS_TEXTS.has(text)) {
+    res.status(400).json({ error: "text_not_allowed" });
+    return;
+  }
 
-      response.on("data", (chunk) => chunks.push(chunk));
-      response.on("end", () => {
-        const body = Buffer.concat(chunks);
+  const cacheKey = `${ELEVEN_VOICE_ID}::${ELEVEN_STABILITY}|${ELEVEN_SIMILARITY}|${ELEVEN_STYLE}|${ELEVEN_SPEAKER_BOOST}::${text}`;
+  const sendAudio = (audio) => {
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(audio);
+  };
 
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          ttsCache.set(cacheKey, body);
-          res.setHeader("Content-Type", "audio/mpeg");
-          res.setHeader("Cache-Control", "no-store");
-          res.send(body);
-          return;
-        }
+  const stored = await readStoredTts(cacheKey);
+  if (stored) {
+    sendAudio(stored);
+    return;
+  }
 
-        res.status(response.statusCode || 502).json({
-          error: "tts_failed",
-          status: response.statusCode,
-          body: body.toString("utf8"),
-        });
-      });
+  if (!ELEVEN_API_KEY) {
+    res.status(503).json({ error: "missing_elevenlabs_api_key" });
+    return;
+  }
+
+  // The screen preloads every line at once; one ElevenLabs call per text.
+  let pending = ttsInflight.get(cacheKey);
+  if (!pending) {
+    pending = requestElevenLabsSpeech(text).finally(() => ttsInflight.delete(cacheKey));
+    ttsInflight.set(cacheKey, pending);
+  }
+
+  try {
+    const { statusCode, body } = await pending;
+    if (statusCode >= 200 && statusCode < 300) {
+      await storeTts(cacheKey, text, body);
+      sendAudio(body);
+      return;
     }
-  );
 
-  request.on("error", (error) => {
+    res.status(statusCode || 502).json({
+      error: "tts_failed",
+      status: statusCode,
+      body: body.toString("utf8"),
+    });
+  } catch (error) {
     res.status(502).json({ error: "tts_error", message: error.message });
-  });
-
-  request.write(payload);
-  request.end();
+  }
 });
 
 app.get("/api/volume/:pct", async (req, res) => {
@@ -2062,6 +2157,7 @@ app.get("/screen/api/health", async (_req, res) => {
       lastWorkerSeenAt: null,
       lastAckedCommandId: 0,
       activeWorkers: [],
+      screenDisplays: screenDisplaySnapshot(),
     });
     return;
   }
@@ -2074,10 +2170,198 @@ app.get("/screen/api/health", async (_req, res) => {
       lastWorkerSeenAt: snapshot.lastWorkerSeenAt,
       lastAckedCommandId: snapshot.lastAckedCommandId,
       activeWorkers: snapshot.activeWorkers,
+      screenDisplays: screenDisplaySnapshot(),
     });
   } catch (error) {
     res.status(500).json({ error: "FAILED_TO_LOAD_SCREEN_HEALTH", detail: String(error) });
   }
+});
+
+// ===== /screen/v2 =====
+
+function parseScreenStudio(value) {
+  const studio = String(value ?? "A").trim().toUpperCase() || "A";
+  return studio === "A" || studio === "B" ? studio : null;
+}
+
+function parseIsoTimestamp(value) {
+  if (typeof value !== "string" || value.length > 40) return null;
+  return Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+function normalizeScreenSlot(slot) {
+  if (!slot || typeof slot !== "object") return null;
+  const startsAt = parseIsoTimestamp(slot.starts_at);
+  if (!startsAt) return null;
+  return { starts_at: startsAt, ends_at: parseIsoTimestamp(slot.ends_at) };
+}
+
+// Pass through only the contract fields the screen uses.
+function normalizeScreenLobbyPayload(data, studio) {
+  if (!data || typeof data !== "object") return null;
+
+  let lobby = null;
+  const rawLobby = data.lobby;
+  const lobbyStartsAt = rawLobby && typeof rawLobby === "object" ? parseIsoTimestamp(rawLobby.starts_at) : null;
+  if (lobbyStartsAt) {
+    const athletes = Array.isArray(rawLobby.athletes) ? rawLobby.athletes : [];
+    lobby = {
+      starts_at: lobbyStartsAt,
+      coach: typeof rawLobby.coach === "string" ? rawLobby.coach.slice(0, 60) : null,
+      athletes: athletes
+        .filter((athlete) => athlete && typeof athlete === "object" && typeof athlete.name === "string")
+        .slice(0, 30)
+        .map((athlete, index) => ({
+          id: String(athlete.id ?? `athlete-${index}`).slice(0, 64),
+          name: athlete.name.trim().slice(0, 40),
+          checked_in_at: parseIsoTimestamp(athlete.checked_in_at),
+          first_session: athlete.first_session === true,
+          session_number:
+            Number.isSafeInteger(athlete.session_number) && athlete.session_number >= 1 ? athlete.session_number : null,
+          milestone: athlete.milestone === true,
+        })),
+    };
+  }
+
+  return {
+    ok: true,
+    now: parseIsoTimestamp(data.now),
+    studio,
+    current: normalizeScreenSlot(data.current),
+    lobby,
+  };
+}
+
+function logScreenLobbyFailure(studio, message) {
+  const lastLoggedAt = screenLobbyLastErrorLogAt.get(studio) || 0;
+  if (Date.now() - lastLoggedAt < SCREEN_LOBBY_ERROR_LOG_MS) return;
+  screenLobbyLastErrorLogAt.set(studio, Date.now());
+  console.error(`[screen-lobby] studio ${studio}: ${message}`);
+}
+
+async function fetchPortalScreenLobby(studio) {
+  if (!UPS_PORTAL_API_BASE_URL || !STUDIO_SCREEN_API_TOKEN) {
+    return { ok: false };
+  }
+
+  try {
+    const response = await fetch(
+      `${UPS_PORTAL_API_BASE_URL}/api/studio-screen/lobby/?studio=${encodeURIComponent(studio)}`,
+      {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${STUDIO_SCREEN_API_TOKEN}`,
+        },
+        signal: AbortSignal.timeout(SCREEN_LOBBY_TIMEOUT_MS),
+      }
+    );
+
+    if (!response.ok) {
+      logScreenLobbyFailure(studio, `portal answered ${response.status}`);
+      return { ok: false };
+    }
+
+    const normalized = normalizeScreenLobbyPayload(await response.json(), studio);
+    if (!normalized) {
+      logScreenLobbyFailure(studio, "portal answered an unexpected body");
+      return { ok: false };
+    }
+    return normalized;
+  } catch (error) {
+    logScreenLobbyFailure(studio, error?.name === "TimeoutError" ? "portal timed out" : String(error?.message || error));
+    return { ok: false };
+  }
+}
+
+async function getScreenLobby(studio) {
+  const cached = screenLobbyCache.get(studio);
+  if (cached && Date.now() - cached.at < SCREEN_LOBBY_CACHE_MS) {
+    return cached.data;
+  }
+
+  let pending = screenLobbyInflight.get(studio);
+  if (!pending) {
+    pending = fetchPortalScreenLobby(studio)
+      .then((data) => {
+        screenLobbyCache.set(studio, { at: Date.now(), data });
+        return data;
+      })
+      .finally(() => screenLobbyInflight.delete(studio));
+    screenLobbyInflight.set(studio, pending);
+  }
+  return pending;
+}
+
+// Constant-time check of X-Screen-Key; comparing digests keeps the length out of the timing too.
+function hasScreenDisplayKey(req) {
+  if (!SCREEN_DISPLAY_KEY_DIGEST) return false;
+  const provided = req.get("x-screen-key");
+  if (typeof provided !== "string" || !provided.trim()) return false;
+  return timingSafeEqual(createHash("sha256").update(provided.trim()).digest(), SCREEN_DISPLAY_KEY_DIGEST);
+}
+
+app.get("/screen/api/lobby", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  // Without the key the screen gets the same answer as a portal outage and runs by the clock alone.
+  if (!hasScreenDisplayKey(req)) {
+    res.json({ ok: false, serverTime: new Date().toISOString() });
+    return;
+  }
+
+  const studio = parseScreenStudio(req.query.studio);
+  if (!studio) {
+    res.status(400).json({ ok: false, error: "invalid_studio" });
+    return;
+  }
+
+  const data = await getScreenLobby(studio);
+  res.json({ ...data, serverTime: new Date().toISOString() });
+});
+
+function screenDisplaySnapshot() {
+  const now = Date.now();
+  return [...screenDisplays.values()]
+    .sort((a, b) => a.studio.localeCompare(b.studio))
+    .map((display) => ({
+      ...display,
+      online: now - Date.parse(display.lastSeenAt) < SCREEN_DISPLAY_ONLINE_SECONDS * 1000,
+    }));
+}
+
+app.post("/screen/api/display/heartbeat", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  if (!hasScreenDisplayKey(req)) {
+    res.json({ ok: false });
+    return;
+  }
+
+  const studio = parseScreenStudio(req.body?.studio);
+  if (!studio) {
+    res.status(400).json({ ok: false, error: "invalid_studio" });
+    return;
+  }
+
+  const cueId = (value) => typeof value === "string" && /^[a-z0-9_-]{1,32}$/i.test(value);
+  const lastCue = cueId(req.body?.lastCue) ? req.body.lastCue : null;
+  // Recorded voice files the screen could not load (it stays silent until all of them are in).
+  const voiceMissing = Array.isArray(req.body?.voiceMissing) ? req.body.voiceMissing.filter(cueId).slice(0, 16) : [];
+
+  screenDisplays.set(studio, {
+    studio,
+    audioUnlocked: req.body?.audioUnlocked === true,
+    voiceReady: req.body?.voiceReady === true,
+    voiceMissing,
+    lastCue,
+    lastCueAt: lastCue ? parseIsoTimestamp(req.body?.lastCueAt) : null,
+    lastSeenAt: new Date().toISOString(),
+  });
+  res.json({ ok: true, serverTime: new Date().toISOString() });
+});
+
+app.get("/screen/v2", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
+  // `root` keeps send's dotfile check to the file name, so this also works from a checkout under a dot folder.
+  res.sendFile("index.html", { root: screenV2Dir });
 });
 
 app.get("/screen/api/worker/commands", requireWorkerAuth, async (req, res) => {

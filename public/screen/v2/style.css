@@ -1,0 +1,442 @@
+@font-face {
+  font-family: "UP.S Numeral";
+  src: url("/screen/v2/UPSNumeral-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+/* Tokens live on body, next to the theme classes: --num must resolve against the
+   current --fg (on :root it would freeze to white and vanish on the white screen). */
+body {
+  --accent: #04afdd;
+  --bg: #000;
+  --fg: #fff;
+  --dim: #7a7a7a;
+  --faint: #353535;
+  --line: #222;
+  --glow: rgba(255, 255, 255, 0.3);
+  --num: var(--fg);
+  --theme: 0.7s;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --num-size: 21.5cqw;
+}
+
+body.inv {
+  --bg: #fff;
+  --fg: #000;
+  --dim: #6b6b6b;
+  --faint: #cfcfcf;
+  --line: #e4e4e4;
+  --glow: rgba(0, 0, 0, 0.2);
+}
+
+body.last { --num: var(--accent); }
+body.has-lobby { --num-size: 16.5cqw; }
+body.final { --num-size: 26cqw; }
+body.final.has-lobby { --num-size: 17.5cqw; }
+/* Minutes 0-4 with names: no title or subtitle, so the countdown can be bigger. */
+body.has-lobby.no-phase.no-sub { --num-size: 19cqw; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { width: 100%; height: 100%; overflow: hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  cursor: none;
+  user-select: none;
+  transition: background-color var(--theme) ease, color var(--theme) ease;
+}
+
+body.locked { cursor: pointer; }
+
+/* The :00 cut is instant: no transition for one frame. */
+body.cut,
+body.cut *,
+body.cut *::before,
+body.cut *::after,
+body.booting .frame *,
+body.booting .frame *::before,
+body.booting .frame *::after { transition: none !important; }
+
+/* 16:9 stage, letterboxed on other aspect ratios. Every size is in cqw. */
+.stage {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
+  container-type: size;
+  overflow: hidden;
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  padding: 3.3cqw 5.2cqw 3.4cqw;
+  transition: opacity 0.8s ease;
+}
+
+body.booting .frame { opacity: 0; }
+
+.corner {
+  position: absolute;
+  width: 1.3cqw;
+  height: 1.3cqw;
+  border: 0 solid var(--faint);
+  transition: border-color var(--theme) ease;
+}
+.corner.tl { top: 1.5cqw; left: 1.5cqw; border-top-width: 1px; border-left-width: 1px; }
+.corner.tr { top: 1.5cqw; right: 1.5cqw; border-top-width: 1px; border-right-width: 1px; }
+.corner.bl { bottom: 1.5cqw; left: 1.5cqw; border-bottom-width: 1px; border-left-width: 1px; }
+.corner.br { bottom: 1.5cqw; right: 1.5cqw; border-bottom-width: 1px; border-right-width: 1px; }
+
+.logo {
+  position: absolute;
+  left: 50%;
+  top: 1.7cqw;
+  width: 6.2cqw;
+  transform: translateX(-50%);
+  opacity: 0.92;
+  transition: filter var(--theme) ease, opacity 0.5s ease;
+}
+body.inv .logo { filter: invert(1); }
+body.locked .logo { opacity: 0; }
+
+/* ===== Top bar ===== */
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 3.2cqw;
+}
+
+.place {
+  font-size: 1.15cqw;
+  font-weight: 500;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--dim);
+  transition: color var(--theme) ease;
+}
+
+.clock {
+  font-family: "UP.S Numeral", ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 2.2cqw;
+  letter-spacing: 0.03em;
+  transition: opacity 0.5s ease;
+}
+body.mode-idle .clock { opacity: 0; }
+
+/* ===== Center ===== */
+.mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.phase {
+  height: 1.25em;
+  font-size: 1.75cqw;
+  font-weight: 600;
+  letter-spacing: 0.5em;
+  margin-right: -0.5em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: height 0.6s var(--ease), opacity 0.45s ease;
+}
+body.no-phase .phase { height: 0; opacity: 0; }
+
+.num {
+  font-family: "UP.S Numeral", ui-monospace, monospace;
+  font-weight: 700;
+  font-size: var(--num-size);
+  line-height: 0.92;
+  margin-top: 1.1cqw;
+  color: var(--num);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: color var(--theme) ease, font-size 0.7s var(--ease), margin 0.6s var(--ease);
+}
+body.no-phase .num { margin-top: 0; }
+
+.num.tick { animation: tick 0.45s var(--ease); }
+
+@keyframes tick {
+  from { transform: scale(1.14); opacity: 0.4; }
+  to { transform: none; opacity: 1; }
+}
+
+.sub {
+  height: 1.3em;
+  margin-top: 1.4cqw;
+  font-size: 1.75cqw;
+  letter-spacing: 0.02em;
+  color: var(--dim);
+  white-space: nowrap;
+  transition: color var(--theme) ease, height 0.6s var(--ease), margin 0.6s var(--ease), opacity 0.45s ease;
+}
+body.no-sub .sub { height: 0; margin-top: 0; opacity: 0; }
+
+body.go .mid { animation: go 0.65s var(--ease); }
+
+@keyframes go {
+  from { transform: translateY(1.6cqw) scale(0.985); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ===== Lobby row: one card per athlete, the session number as the hero ===== */
+/* --u is one stage cqw, computed here as px so it survives inside the cards,
+   which are their own containers (cqi there is the card width). */
+@property --u {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 19.2px;
+}
+
+.lobby {
+  --u: 1cqw;
+  display: flex;
+  flex-direction: column;
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: height 0.7s var(--ease), opacity 0.45s ease, margin 0.7s var(--ease);
+}
+
+body.has-lobby .lobby {
+  height: 13.4cqw;
+  margin-bottom: 2.6cqw;
+  opacity: 1;
+}
+
+/* Only names (older bridge): a shorter strip, so the title stays next to them. */
+body.has-lobby .lobby.compact { height: 7.4cqw; }
+
+/* Without a coach the line is hidden but keeps its place, so the cards do not move. */
+.lobby-head.empty { visibility: hidden; }
+
+.lobby-head {
+  flex: none;
+  min-height: 1.25em;
+  font-size: 1.05cqw;
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--dim);
+  transition: color var(--theme) ease;
+}
+
+/* Equal columns up to ~300 px, packed from the left. */
+.names {
+  --digits: 2;
+  flex: 1;
+  min-height: 0;
+  margin-top: 2cqw;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 15.6cqw);
+  justify-content: start;
+  column-gap: 1.7cqw;
+  list-style: none;
+}
+
+.athlete {
+  --ink: var(--fg);
+  position: relative;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start; /* top-aligned: the gap under the title stays the same whatever the name size */
+  min-width: 0;
+  opacity: 0.38;
+  transition: opacity 0.3s ease, transform 0.7s var(--ease);
+}
+
+/* A #04afdd number means a special day: a first session or a milestone. */
+.athlete.first,
+.athlete.milestone { --ink: var(--accent); }
+.athlete.lit { opacity: 1; }
+
+/* A label that does not fit is scaled (--fit, set by app.js) around its baseline.
+   Inter: ascender 0.969em, descender 0.242em. */
+.athlete .tag {
+  font-size: calc(var(--u) * 0.7);
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0.55;
+  transform: scale(var(--fit, 1));
+  transform-origin: 0 0.8635em;
+}
+.athlete.first .tag { color: var(--accent); opacity: 1; }
+
+/* Same size across the row: 130 px at 1080p, smaller only when the longest number would not fit. */
+.athlete .sn {
+  margin-top: calc(var(--u) * 0.55);
+  font-family: "UP.S Numeral", ui-monospace, monospace;
+  font-weight: 700;
+  font-size: min(calc(var(--u) * 6.8), calc(100cqi / (var(--digits) * 0.62)));
+  line-height: 0.85;
+  margin-left: -0.06em; /* the digits' side bearing: lines the number up with the label and the name */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: transparent;
+  -webkit-text-stroke: max(1px, calc(var(--u) * 0.105)) var(--ink);
+  transform-origin: 0 100%;
+  transition: color 0.3s ease;
+}
+.athlete.lit .sn { color: var(--ink); }
+
+/* One size for every name in the row (--name-fit on .names, set by app.js): the largest at
+   which the longest name fits its column, never above the normal size. */
+.athlete .name {
+  margin-top: calc(var(--u) * 0.7);
+  font-size: calc(var(--u) * 2.1 * var(--name-fit, 1));
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Older bridge without session numbers: just the name, larger. */
+.athlete.no-number .tag,
+.athlete.no-number .sn { display: none; }
+.athlete.no-number .name { font-size: calc(var(--u) * 3 * var(--name-fit, 1)); }
+
+/* The scan moment, once: the number fills in #04afdd with a slight pulse and settles in its
+   own colour (it stays #04afdd for a first session or a milestone). */
+.athlete.ignite .sn { animation: pop 0.3s var(--ease), lit-fill 0.8s ease-out; }
+
+@keyframes lit-fill {
+  0%, 25% { color: var(--accent); -webkit-text-stroke-color: var(--accent); }
+  100% { color: var(--ink); -webkit-text-stroke-color: var(--ink); }
+}
+
+@keyframes pop {
+  from { transform: scale(1.04); }
+  to { transform: none; }
+}
+
+.athlete.enter { animation: slot-in 0.6s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms); }
+
+@keyframes slot-in {
+  from { opacity: 0; transform: translateY(1.2cqw); }
+}
+
+/* ===== Progress: one continuous line from minute 0 to 55 ===== */
+.progress { transition: opacity 0.5s ease; }
+body.no-bar .progress { opacity: 0; }
+
+.bar {
+  position: relative;
+  height: 0.26cqw;
+  background: var(--line);
+  transition: background-color var(--theme) ease;
+}
+
+.bar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  background: var(--num);
+  transition: width 0.9s linear, background-color var(--theme) ease;
+}
+
+/* ===== Sound gate and status ===== */
+.gate {
+  position: absolute;
+  top: 2.1cqw;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 1.1cqw;
+  padding: 0.85cqw 1.9cqw;
+  border: 1px solid var(--fg);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  transform: translateX(-50%);
+  animation: gate-pulse 2.6s ease-in-out infinite;
+}
+.gate[hidden] { display: none; }
+
+.gate svg {
+  width: 1.5cqw;
+  height: 1.5cqw;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.gate-title {
+  font-size: 1.1cqw;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.gate-hint {
+  font-size: 1cqw;
+  color: var(--dim);
+}
+
+@keyframes gate-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--glow); }
+  50% { box-shadow: 0 0 1.6cqw 0.1cqw var(--glow); }
+}
+
+.status {
+  position: absolute;
+  left: 3.4cqw;
+  right: 3.4cqw;
+  bottom: 1.25cqw;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78cqw;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--dim);
+  pointer-events: none;
+}
+
+.sound {
+  display: flex;
+  align-items: center;
+  gap: 0.5cqw;
+  opacity: 0.55;
+}
+
+.sound svg {
+  width: 1.05cqw;
+  height: 1.05cqw;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .num.tick, body.go .mid, .athlete.enter, .athlete.ignite .sn, .gate { animation: none; }
+}
