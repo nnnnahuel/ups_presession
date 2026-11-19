@@ -76,8 +76,6 @@ const DEMO = parseDemoParam(params.get("demo"));
 // ?athletes=1..8: how many demo athletes (default 6). Not ?demo=N, because ?demo=1 already means "demo on".
 const DEMO_COUNT = clamp(Number.parseInt(params.get("athletes"), 10) || DEMO_DEFAULT_COUNT, 1, DEMO_ROSTER.length);
 const MUTE = isTrue(params.get("mute"));
-// ?roster=grid: comparison variant, the athletes in two rows with bigger names (all in style.css).
-const ROSTER_GRID = params.get("roster") === "grid";
 const TEST_MODE = SIMULATED || DEMO !== null; // never touches the studio volume, never sends heartbeats
 const RATE = SIMULATED ? SPEED : 1;
 // Screen key (?key=...): kept in localStorage so a reload without the parameter still works,
@@ -218,7 +216,6 @@ const el = {
 };
 
 el.place.textContent = TEXT.place[STUDIO];
-body.classList.toggle("roster-grid", ROSTER_GRID);
 
 // Progress bar: one segment per exercise plus the extra, sized by its minutes.
 const CLASS_MINUTES = CLASS_END / MIN;
@@ -368,8 +365,8 @@ function renderNames(names) {
   body.classList.add("has-lobby");
   setText(el.lobbyTitle, TEXT.namesTitle(hhmm(names.classStart), names.coach));
 
-  const firstBox = new Map();
-  if (!appearing) for (const [id, li] of slots) firstBox.set(id, li.getBoundingClientRect());
+  const firstLeft = new Map();
+  if (!appearing) for (const [id, li] of slots) firstLeft.set(id, li.getBoundingClientRect().left);
 
   const wanted = new Set();
   names.athletes.forEach((athlete, index) => {
@@ -403,14 +400,12 @@ function renderNames(names) {
 
   const moved = [];
   for (const [id, li] of slots) {
-    const before = firstBox.get(id);
-    if (!before) continue;
-    const now = li.getBoundingClientRect();
-    const dx = before.left - now.left;
-    const dy = before.top - now.top; // only in the grid, when a card changes rows
-    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    const left = firstLeft.get(id);
+    if (left === undefined) continue;
+    const dx = left - li.getBoundingClientRect().left;
+    if (Math.abs(dx) < 1) continue;
     li.style.transition = "none";
-    li.style.transform = `translate(${dx}px, ${dy}px)`;
+    li.style.transform = `translateX(${dx}px)`;
     moved.push(li);
   }
   if (moved.length) {

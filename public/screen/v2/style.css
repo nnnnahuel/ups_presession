@@ -283,7 +283,7 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
   margin-top: calc(var(--u) * 0.55);
   font-family: "UP.S Numeral", ui-monospace, monospace;
   font-weight: 700;
-  font-size: min(calc(var(--u) * var(--sn-size, 6.8)), calc(100cqi / (var(--digits) * 0.62)));
+  font-size: min(calc(var(--u) * 6.8), calc(100cqi / (var(--digits) * 0.62)));
   line-height: 0.85;
   margin-left: -0.06em; /* the digits' side bearing: lines the number up with the label and the name */
   font-variant-numeric: tabular-nums;
@@ -299,7 +299,7 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
    which the longest name fits its column, never above the normal size. */
 .athlete .name {
   margin-top: calc(var(--u) * 0.7);
-  font-size: calc(var(--u) * var(--name-size, 2.1) * var(--name-fit, 1));
+  font-size: calc(var(--u) * 2.1 * var(--name-fit, 1));
   font-weight: 800;
   letter-spacing: 0.01em;
   line-height: 1.1;
@@ -331,36 +331,6 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
 @keyframes slot-in {
   from { opacity: 0; transform: translateY(1.2cqw); }
 }
-
-/* ===== ?roster=grid: comparison variant (keep one of the two layouts) =====
-   Same cards, in rows of 3 (4 with 7 or 8 athletes), number ~120 px and names up to ~70 px. */
-body.roster-grid.has-lobby .lobby { height: 14cqw; }
-body.roster-grid.has-lobby .lobby.compact { height: 7.4cqw; }
-
-body.roster-grid .names {
-  --sn-size: 6.25;
-  --name-size: 3.65;
-  margin-top: 1.4cqw;
-  grid-auto-flow: row;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-content: start;
-  column-gap: 3cqw; /* wider than the row: big names in neighbouring columns must not read as one */
-  row-gap: 1cqw;
-}
-body.roster-grid .names:has(> :nth-child(7)) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-body.roster-grid .athlete.no-number .name { font-size: calc(var(--u) * var(--name-size) * var(--name-fit, 1)); }
-
-/* From 4 athletes, two rows (~500 px): everything above shrinks while the names show, and the
-   hidden exercise bar of «Sesión completa» gives its space back. */
-body.roster-grid.has-lobby:has(.names > :nth-child(4)) { --num-size: 10.5cqw; }
-body.roster-grid.has-lobby.no-phase.no-sub:has(.names > :nth-child(4)) { --num-size: 13.5cqw; }
-body.roster-grid.has-lobby:has(.names > :nth-child(4)) .lobby { height: 26.4cqw; margin-bottom: 1.8cqw; }
-body.roster-grid.has-lobby:has(.names > :nth-child(4)) .lobby.compact { height: 13.4cqw; }
-body.roster-grid.has-lobby:has(.names > :nth-child(4)) .phase { font-size: 1.4cqw; }
-body.roster-grid.has-lobby:has(.names > :nth-child(4)) .num { margin-top: 0.7cqw; }
-body.roster-grid.has-lobby:has(.names > :nth-child(4)) .sub { font-size: 1.4cqw; margin-top: 0.9cqw; }
-body.roster-grid.has-lobby.no-bar:has(.names > :nth-child(4)) .progress { display: none; }
-body.roster-grid.has-lobby.no-bar:has(.names > :nth-child(4)) .lobby { margin-bottom: 0.6cqw; }
 
 /* ===== Progress: one segment per exercise plus the extra ===== */
 .progress { transition: opacity 0.5s ease; }
