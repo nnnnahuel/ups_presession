@@ -55,11 +55,11 @@ test("the ramp keeps its steps and timing: 20 steps of 60 ms for 1.2 s", async (
   assert.deepEqual(waits, Array(19).fill(60));
   assert.equal(volume.currentPct, 50);
 
-  // A bare number (the server crons send `volume_ramp 90`) ramps from the last known level.
-  const cron = fakeVolume({ initialPct: 50 });
-  await executeCommand({ type: "volume_ramp", value: 90 }, cron.volume);
-  assert.equal(cron.calls.length, 20);
-  assert.deepEqual(cron.calls.at(-1), ["setsysvolume", String(Math.round(0.9 * 65535))]);
+  // A bare number (as the server's old timers sent, `volume_ramp 90`) still ramps from the last known level.
+  const bare = fakeVolume({ initialPct: 50 });
+  await executeCommand({ type: "volume_ramp", value: 90 }, bare.volume);
+  assert.equal(bare.calls.length, 20);
+  assert.deepEqual(bare.calls.at(-1), ["setsysvolume", String(Math.round(0.9 * 65535))]);
 
   // Unknown start: `from` is used, as before.
   const fresh = fakeVolume();
