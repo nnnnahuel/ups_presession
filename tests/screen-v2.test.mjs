@@ -185,7 +185,15 @@ test("a late arrival joins the row when they scan", () => {
   const schedule = withCurrent();
   assert.ok(!view("21:09:59", schedule).names.athletes.some((a) => a.name === "Tomás"));
   const after = view("21:10", schedule).names.athletes;
-  assert.deepEqual(after.at(-1), { id: "demo-tomas", name: "Tomás", lit: true, first: false, milestone: false, number: 12 });
+  assert.deepEqual(after.at(-1), {
+    id: "demo-tomas",
+    name: "Tomás",
+    lit: true,
+    first: false,
+    milestone: false,
+    number: 12,
+    finalNumber: 12,
+  });
   assert.equal(after.length, 5);
 });
 
@@ -381,18 +389,49 @@ test("athlete cards carry the session number, first session and milestone", () =
   };
   const cards = view("20:58:30", schedule).names.athletes;
   assert.deepEqual(
-    cards.map((c) => [c.name, c.number, c.first, c.milestone, c.lit]),
+    cards.map((c) => [c.name, c.number, c.finalNumber, c.first, c.milestone, c.lit]),
     [
-      ["Agustina", 1, true, false, true],
-      ["Marta", 100, false, true, false],
-      ["Luna", 247, false, false, false],
-      ["Tomás", null, false, false, false],
-      ["Belén", null, false, false, false],
-      ["Bruno", null, false, false, false],
-      ["Facundo", null, false, false, false],
-      ["Sol", 1, true, false, false],
+      ["Agustina", 1, 1, true, false, true],
+      ["Marta", 99, 100, false, false, false],
+      ["Luna", 246, 247, false, false, false],
+      ["Tomás", null, null, false, false, false],
+      ["Belén", null, null, false, false, false],
+      ["Bruno", null, null, false, false, false],
+      ["Facundo", null, null, false, false, false],
+      ["Sol", 1, 1, true, false, false],
     ]
   );
+});
+
+test("the number counts sessions done: the scan adds one, and the milestone shows at the scan", () => {
+  const card = (athlete, scanned) => {
+    const schedule = {
+      hasClassAt: () => true,
+      lobbyFor: (classStart) => ({
+        starts_at: new Date(classStart).toISOString(),
+        athletes: [{ id: "x", name: "Ana", ...athlete, checked_in_at: scanned ? "2026-11-18T20:58:00-03:00" : null }],
+      }),
+    };
+    const c = view("20:58:30", schedule).names.athletes[0];
+    return [c.number, c.finalNumber, c.milestone];
+  };
+  assert.deepEqual([card({ session_number: 12 }, false), card({ session_number: 12 }, true)], [
+    [11, 12, false],
+    [12, 12, false],
+  ]);
+  assert.deepEqual([card({ session_number: 100, milestone: true }, false), card({ session_number: 100, milestone: true }, true)], [
+    [99, 100, false],
+    [100, 100, true],
+  ]);
+  assert.deepEqual([card({ session_number: 1, first_session: true }, false), card({ first_session: true }, true)], [
+    [1, 1, false],
+    [1, 1, false],
+  ], "a first session never shows 0");
+  assert.deepEqual(card({ session_number: 1 }, false), [1, 1, false], "never 0, even with odd data");
+  assert.deepEqual([card({}, false), card({ session_number: null }, true)], [
+    [null, null, false],
+    [null, null, false],
+  ]);
 });
 
 test("Argentina wall clock helpers", () => {

@@ -301,14 +301,61 @@ function createSlot() {
   return li;
 }
 
-function fillSlot(li, athlete) {
+function fillSlot(li, athlete, rollNumber) {
   const hasNumber = athlete.number !== null;
   li.classList.toggle("no-number", !hasNumber);
   li.classList.toggle("first", athlete.first && hasNumber);
   li.classList.toggle("milestone", athlete.milestone && hasNumber);
   setText(li.querySelector(".tag"), hasNumber ? (athlete.first ? TEXT.firstSessionLabel : TEXT.sessionLabel) : "");
-  setText(li.querySelector(".sn"), hasNumber ? String(athlete.number) : "");
+  const sn = li.querySelector(".sn");
+  sn.style.setProperty("--sn-digits", String(hasNumber ? String(athlete.finalNumber).length : 1));
+  setNumber(sn, hasNumber ? String(athlete.number) : "", rollNumber);
   setText(li.querySelector(".name"), athlete.name);
+}
+
+// The number of a card, rolled up digit by digit when the scan adds one (see .digit in style.css).
+const NUMBER_ROLL_MS = 600;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function setNumber(sn, value, roll) {
+  if (sn.dataset.rollTo !== undefined) {
+    if (sn.dataset.rollTo === value) return; // already rolling there
+    delete sn.dataset.rollTo;
+    sn.textContent = "";
+  }
+  const from = sn.textContent;
+  if (!roll || !from || from === value || reducedMotion.matches) {
+    setText(sn, value);
+    return;
+  }
+  const width = Math.max(from.length, value.length);
+  sn.replaceChildren(...Array.from({ length: width }, (_, index) => digitCell(from[index] || "", value[index] || "")));
+  sn.dataset.rollTo = value;
+  setTimeout(() => {
+    if (sn.dataset.rollTo !== value) return;
+    delete sn.dataset.rollTo;
+    sn.textContent = value;
+  }, NUMBER_ROLL_MS + 80);
+}
+
+function digitCell(oldDigit, newDigit) {
+  const cell = document.createElement("span");
+  cell.className = "digit";
+  if (oldDigit === newDigit) {
+    cell.textContent = newDigit;
+    return cell;
+  }
+  const roll = document.createElement("span");
+  roll.className = "roll";
+  for (const digit of [oldDigit, newDigit]) {
+    const face = document.createElement("span");
+    // An empty position (9 -> 10) still needs a digit's width: a hidden 0.
+    face.textContent = digit || "0";
+    if (!digit) face.className = "blank";
+    roll.appendChild(face);
+  }
+  cell.appendChild(roll);
+  return cell;
 }
 
 function clearSlots() {
@@ -381,6 +428,7 @@ function updateSlots(names, appearing, keepLeaving = null) {
   const wanted = new Set();
   names.athletes.forEach((athlete, index) => {
     let li = slots.get(athlete.id);
+    const isNew = !li;
     if (!li) {
       li = createSlot();
       slots.set(athlete.id, li);
@@ -392,15 +440,18 @@ function updateSlots(names, appearing, keepLeaving = null) {
         li.addEventListener("animationend", () => li.classList.remove("enter"), { once: true });
       }
     }
-    fillSlot(li, athlete);
     const wasLit = li.classList.contains("lit");
+    const scanning = athlete.lit && !wasLit && !appearing;
+    // A card already on the wall rolls its number up at the scan; a late arrival in the row comes
+    // in with its final number.
+    fillSlot(li, athlete, scanning && !isNew);
     li.classList.toggle("lit", athlete.lit);
-    if (athlete.lit && !wasLit && !appearing) retrigger(li, "ignite", 1000);
+    if (scanning) retrigger(li, "ignite", 1000);
     el.names.appendChild(li);
     wanted.add(athlete.id);
   });
   // Every number in the row shares one size, set by the longest number (3 digits fit at full size).
-  const digits = Math.max(1, ...names.athletes.map((a) => (a.number === null ? 0 : String(a.number).length)));
+  const digits = Math.max(1, ...names.athletes.map((a) => (a.finalNumber === null ? 0 : String(a.finalNumber).length)));
   el.names.style.setProperty("--digits", String(digits));
   el.lobby.classList.toggle("compact", names.athletes.every((a) => a.number === null));
   for (const [id, li] of slots) {

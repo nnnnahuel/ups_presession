@@ -109,16 +109,23 @@ function rosterFrom(slot, classStart, { presentOnly = false } = {}) {
     if (seen.has(id)) id = `${id}-${index}`;
     seen.add(id);
     const first = athlete.first_session === true;
+    const lit = Boolean(athlete.checked_in_at);
     const session =
       Number.isSafeInteger(athlete.session_number) && athlete.session_number >= 1 ? athlete.session_number : null;
+    // session_number is today's session. A first session is session 1; without session_number
+    // (older bridge) the card shows only the name.
+    const finalNumber = first ? 1 : session;
     return {
       id,
       name: String(athlete.name || ""),
-      lit: Boolean(athlete.checked_in_at),
+      lit,
       first,
-      milestone: athlete.milestone === true,
-      // A first session is session 1; without session_number (older bridge) the card shows only the name.
-      number: first ? 1 : session,
+      // The milestone's #04afdd shows when the scan reaches it, not before.
+      milestone: athlete.milestone === true && lit,
+      // On the wall the number counts sessions done: before scanning, the ones already done
+      // (never 0; a first session stays 1); the scan adds today's.
+      number: finalNumber === null || lit || first ? finalNumber : Math.max(1, finalNumber - 1),
+      finalNumber,
     };
   });
   if (presentOnly) athletes = athletes.filter((a) => a.lit);

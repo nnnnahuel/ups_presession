@@ -306,6 +306,32 @@ body.has-lobby .lobby.compact { height: 7.4cqw; }
   -webkit-text-stroke: max(1px, calc(var(--u) * 0.105)) var(--ink);
   transform-origin: 0 100%;
   transition: color 0.3s ease;
+  /* Room for the final number from the start: 99 -> 100 never pushes anything. */
+  min-width: calc(var(--sn-digits, 1) * 0.62em);
+}
+
+/* The scan adds one: each digit that changes rolls up, the old one out the top, the new one in
+   from below. Cells keep the line's own height and baseline, so nothing moves before or after. */
+.athlete .sn .digit {
+  display: inline-block;
+  vertical-align: top;
+  height: 0.85em;
+  overflow: hidden;
+}
+.athlete .sn .roll {
+  display: block;
+  /* Even, no overshoot: it should read as a counter turning, not a snap. */
+  animation: roll 0.6s cubic-bezier(0.45, 0.05, 0.25, 1) both;
+}
+.athlete .sn .roll > span {
+  display: block;
+  height: 0.85em;
+}
+.athlete .sn .blank { visibility: hidden; }
+
+@keyframes roll {
+  from { transform: none; }
+  to { transform: translateY(-50%); }
 }
 .athlete.lit .sn { color: var(--ink); }
 
